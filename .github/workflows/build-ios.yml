@@ -33,7 +33,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      BUNDLE_ID: ${{ vars.BUNDLE_ID }}
+      BUNDLE_ID: ${{ vars.BUNDLE_ID || secrets.BUNDLE_ID }}
       OHOS_SDK: ${{ github.workspace }}/../ohos-sdk/9
       OHOS_SDK_URL: https://mirrors.huaweicloud.com/openharmony/os/3.2.2/L2-SDK-MAC-M1-PUBLIC.tar.gz
     steps:
@@ -48,7 +48,7 @@ jobs:
             exit 1
           fi
           if ! [[ "$BUNDLE_ID" =~ ^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z][A-Za-z0-9-]*)+$ ]]; then
-            echo "::error::Set the repository variable BUNDLE_ID (e.g. com.yourname.huasideload). Current: '$BUNDLE_ID'"
+            echo "::error::Set BUNDLE_ID as repository variable or secret (e.g. com.yourname.huasideload). Current: '$BUNDLE_ID'"
             exit 1
           fi
           echo "Phone app: $BUNDLE_ID"
