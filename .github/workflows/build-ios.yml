@@ -1,8 +1,12 @@
 # Builds the iPhone app (HuaSideload) without a Mac: an unsigned .ipa you sign and install from Windows
 # with Sideloadly or AltStore. Optionally builds and signs the "Voice" watch app and bundles it into the .ipa.
 #
+# Works in a public repository (unlimited free runner minutes): the .ipa is uploaded only inside a
+# password-protected .7z archive (AES-256, file names encrypted too) and the artifact is deleted after one day.
+#
 # Repository settings → Secrets and variables → Actions:
 #   Variable  BUNDLE_ID                  e.g. com.smokerdoker.huasideload  (watch app becomes <BUNDLE_ID>.voice)
+#   Secret    ARTIFACT_PASSWORD          password for the downloaded .7z archive (required)
 #   Secrets   (only for the watch app, see ANLEITUNG.md)
 #             WATCH_KEYSTORE_P12_BASE64  base64 of mykey.p12
 #             WATCH_KEY_PASSWORD         keystore / key password
@@ -36,7 +40,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check settings
+        env:
+          ARTIFACT_PASSWORD: ${{ secrets.ARTIFACT_PASSWORD }}
         run: |
+          if [ "${#ARTIFACT_PASSWORD}" -lt 12 ]; then
+            echo "::error::Set the secret ARTIFACT_PASSWORD (at least 12 characters). The build is only uploaded encrypted."
+            exit 1
+          fi
           if ! [[ "$BUNDLE_ID" =~ ^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z][A-Za-z0-9-]*)+$ ]]; then
             echo "::error::Set the repository variable BUNDLE_ID (e.g. com.yourname.huasideload). Current: '$BUNDLE_ID'"
             exit 1
@@ -133,19 +143,27 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build | tail -40
 
-      - name: Package IPA
+      - name: Package IPA (encrypted)
+        env:
+          ARTIFACT_PASSWORD: ${{ secrets.ARTIFACT_PASSWORD }}
         run: |
           set -euo pipefail
           app="build/Release-iphoneos/HuaSideload.app"
           test -d "$app"
-          mkdir -p ipa/Payload
+          mkdir -p ipa/Payload out
           cp -R "$app" ipa/Payload/
-          echo "Bundled watch apps:"; ls ipa/Payload/HuaSideload.app/*.bin 2>/dev/null || echo "(none)"
+          echo "Bundled watch apps:"; find ipa/Payload/HuaSideload.app -maxdepth 1 -name '*.bin' -exec basename {} \; | grep . || echo "(none)"
           (cd ipa && zip -qry ../HuaSideload-unsigned.ipa Payload)
-          ls -l HuaSideload-unsigned.ipa
+          command -v 7zz >/dev/null || brew install sevenzip
+          # -mhe=on also encrypts the file names; the password comes from the secret and never reaches the log
+          7zz a -t7z -mhe=on -p"$ARTIFACT_PASSWORD" out/HuaSideload-unsigned-ipa.7z HuaSideload-unsigned.ipa >/dev/null
+          7zz t -p"$ARTIFACT_PASSWORD" out/HuaSideload-unsigned-ipa.7z >/dev/null
+          rm -rf ipa HuaSideload-unsigned.ipa build signing/profiles WatchApps/*.bin
+          ls -l out
 
       - uses: actions/upload-artifact@v4
         with:
-          name: HuaSideload-unsigned-ipa
-          path: HuaSideload-unsigned.ipa
-          retention-days: 14
+          name: HuaSideload-unsigned-ipa-encrypted
+          path: out/HuaSideload-unsigned-ipa.7z
+          retention-days: 1
+          compression-level: 0

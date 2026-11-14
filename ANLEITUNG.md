@@ -14,15 +14,19 @@ So funktioniert es: Du öffnest „Voice“ auf der Uhr, das iPhone ruft die Uhr
 
 ## Schritt 1 – Repo und Bundle-ID
 
-1. Dieses Repo als **privates** Repo in deinem GitHub-Account anlegen (privat, weil die gebaute App die UDID deiner Uhr enthält).
+1. Dieses Repo als **öffentliches** Repo in deinem GitHub-Account anlegen. Dann sind die macOS-Runner kostenlos und unbegrenzt.
+   Die gebaute App wird nur **verschlüsselt** hochgeladen (7z, AES-256, auch die Dateinamen) und nach einem Tag gelöscht. Deine Schlüssel liegen als Secrets im Repo und sind nicht öffentlich.
 2. *Settings → Secrets and variables → Actions → Variables → New variable*
    `BUNDLE_ID` = z. B. `com.smokerdoker.huasideload`
    Die Watch-App heißt dann automatisch `com.smokerdoker.huasideload.voice`.
+3. *Settings → Secrets and variables → Actions → Secrets → New secret*
+   `ARTIFACT_PASSWORD` = ein langes Passwort (mind. 12 Zeichen, am besten aus dem Passwort-Manager). Damit entpackst du später die App.
 
 ## Schritt 2 – iPhone-App ohne Watch-App bauen und installieren
 
 1. *Actions → Build iOS app (unsigned IPA) → Run workflow* (Haken „watch app“ aus lassen).
-2. Nach ca. 5–10 Minuten unter dem Lauf das Artefakt **HuaSideload-unsigned-ipa** herunterladen und entpacken.
+2. Nach ca. 5–10 Minuten unter dem Lauf das Artefakt **HuaSideload-unsigned-ipa-encrypted** herunterladen (innerhalb von 24 Stunden).
+   Die Zip enthält `HuaSideload-unsigned-ipa.7z` → mit [7-Zip](https://www.7-zip.org) und deinem `ARTIFACT_PASSWORD` entpacken → `HuaSideload-unsigned.ipa`.
 3. Auf dem Windows-PC [Sideloadly](https://sideloadly.io) installieren, iPhone per Kabel anschließen, die `.ipa` reinziehen, Apple-ID eingeben, **Start**.
    - In den *Advanced Options* darf die Bundle-ID **nicht** geändert werden.
 4. Auf dem iPhone: *Einstellungen → Allgemein → VPN & Geräteverwaltung* → deiner Apple-ID vertrauen. Ab iOS 16 zusätzlich *Datenschutz & Sicherheit → Entwicklermodus* einschalten.
@@ -91,6 +95,8 @@ Unter *Settings → Secrets and variables → Actions → Secrets* anlegen:
 ## Wenn etwas nicht klappt
 
 - **Workflow: „Set the repository variable BUNDLE_ID“** → Schritt 1.2.
+- **Workflow: „Set the secret ARTIFACT_PASSWORD“** → Schritt 1.3.
+- **Artefakt weg** → wird nach 24 Stunden gelöscht; Workflow einfach neu starten.
 - **Workflow scheitert beim SDK-Download** → Huawei-Mirror langsam/nicht erreichbar, einfach erneut starten.
 - **Installation auf der Uhr: Fehler 103** → UDID nicht im Profil, falscher Paketname oder falsches Zertifikat (Schritt 4).
 - **„Check microphone access and offline speech recognition“** → Mikrofon/Spracherkennung für die App erlauben, Schritt 7.4.
