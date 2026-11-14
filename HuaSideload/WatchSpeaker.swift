@@ -124,14 +124,27 @@ final class WatchSpeaker: NSObject, ObservableObject, CXProviderDelegate {
 
     private var watchesMic: Bool { micGestures && onMicToggled != nil }
 
-    override init() {
+    /// UserDefaults key: when true the iPhone itself rings silently (only the watch should ring).
+    static let silentPhoneRingKey = "speaker.silentPhoneRing"
+
+    private static func providerConfiguration() -> CXProviderConfiguration {
         let config = CXProviderConfiguration()
         config.supportsVideo = false
         config.maximumCallsPerCallGroup = 1
         config.maximumCallGroups = 1
         config.supportedHandleTypes = [.generic]
         config.includesCallsInRecents = false
-        provider = CXProvider(configuration: config)
+        // A bundled one-second silent sound replaces the iPhone ringtone. The watch shows and signals
+        // the call by itself; the iPhone may still vibrate depending on the system haptics setting.
+        if UserDefaults.standard.bool(forKey: silentPhoneRingKey),
+           Bundle.main.url(forResource: "SilentRing", withExtension: "wav") != nil {
+            config.ringtoneSound = "SilentRing.wav"
+        }
+        return config
+    }
+
+    override init() {
+        provider = CXProvider(configuration: Self.providerConfiguration())
         super.init()
         provider.setDelegate(self, queue: nil)
     }
@@ -156,6 +169,7 @@ final class WatchSpeaker: NSObject, ObservableObject, CXProviderDelegate {
         callID = id
         state = .ringing
         status = L("The watch is ringing: answer it on the watch", "Saat çalıyor: saatten aç")
+        provider.configuration = Self.providerConfiguration()   // picks up a changed ringtone setting
         let update = CXCallUpdate()
         update.remoteHandle = CXHandle(type: .generic, value: callerName)
         update.localizedCallerName = callerName

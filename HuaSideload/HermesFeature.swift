@@ -536,6 +536,7 @@ private struct VoiceProviderSettings: View {
     @AppStorage("voice.claudeModel") private var claudeModel = ""
     @AppStorage("voice.claudeGateway") private var claudeGateway = false
     @AppStorage("voice.dictationLocale") private var dictationLocale = ""
+    @AppStorage(WatchSpeaker.silentPhoneRingKey) private var silentPhoneRing = false
     @State private var codexKey = ""
     @State private var claudeKey = ""
     @State private var keyStatus = ""
@@ -561,6 +562,7 @@ private struct VoiceProviderSettings: View {
                 }
                 .buttonStyle(.borderless)
             }
+            Toggle(L("Ring only the watch (iPhone stays silent)", "Sadece saat çalsın (iPhone sessiz)"), isOn: $silentPhoneRing)
             DisclosureGroup(L("ChatGPT Voice Settings", "ChatGPT Voice ayarları")) {
                 TextField(L("WSS bridge URL", "WSS köprü adresi"), text: $codexURL)
                     .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
