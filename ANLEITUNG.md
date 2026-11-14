@@ -101,3 +101,7 @@ Unter *Settings → Secrets and variables → Actions → Secrets* anlegen:
 - **Installation auf der Uhr: Fehler 103** → UDID nicht im Profil, falscher Paketname oder falsches Zertifikat (Schritt 4).
 - **„Check microphone access and offline speech recognition“** → Mikrofon/Spracherkennung für die App erlauben, Schritt 7.4.
 - **Uhr verliert die Verbindung** → HuaSideload nicht aus dem App-Umschalter wischen.
+
+## Optional: Claude Code auf dem eigenen Server (Konnektoren, kein API-Key)
+
+Statt der Claude API kann die Uhr auch **Claude Code auf deinem eigenen Server** fragen – mit deinem Claude-Abo und deinen claude.ai-Konnektoren. Einrichtung: [`tools/claude-bridge/README.md`](tools/claude-bridge/README.md).

@@ -1,0 +1,14 @@
+[Unit]
+Description=Claude watch bridge (watch voice -> Claude Code)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 %h/.local/share/claude-watch-bridge/bridge.py
+# Claude Code installed with the native installer lives in ~/.local/bin
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Optional: Environment=CLAUDE_MODEL=sonnet
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

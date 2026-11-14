@@ -61,7 +61,10 @@ final class HermesFeature: WatchFeature {
         }
     }
 
-    var apiKey = ""
+    // Kept in the keychain so the bridge key survives app restarts (it was memory-only before).
+    var apiKey = VoiceKeychain.load(account: "hermes.apiKey") ?? "" {
+        didSet { _ = VoiceKeychain.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), account: "hermes.apiKey") }
+    }
     private(set) var answer = ""
     private(set) var error: String?
     private(set) var sending = false
