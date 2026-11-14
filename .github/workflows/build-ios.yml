@@ -37,7 +37,7 @@ jobs:
       OHOS_SDK: ${{ github.workspace }}/../ohos-sdk/9
       OHOS_SDK_URL: https://mirrors.huaweicloud.com/openharmony/os/3.2.2/L2-SDK-MAC-M1-PUBLIC.tar.gz
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check settings
         env:
@@ -66,13 +66,13 @@ jobs:
       # ---------- optional: Voice watch app ----------
       - name: Set up Node 16 (watch app compiler)
         if: inputs.build_watch_app
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 16
 
       - name: Set up Java 17 (watch app packing and signing)
         if: inputs.build_watch_app
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -109,9 +109,15 @@ jobs:
           ALIAS: ${{ secrets.WATCH_KEY_ALIAS }}
         run: |
           set -euo pipefail
-          for v in P12 PASS CERT PROFILE; do
-            [ -n "${!v}" ] || { echo "::error::Secret for $v is missing (see ANLEITUNG.md)"; exit 1; }
-          done
+          missing=""
+          [ -n "$P12" ]     || missing="$missing WATCH_KEYSTORE_P12_BASE64"
+          [ -n "$PASS" ]    || missing="$missing WATCH_KEY_PASSWORD"
+          [ -n "$CERT" ]    || missing="$missing WATCH_CERT_BASE64"
+          [ -n "$PROFILE" ] || missing="$missing WATCH_PROFILE_BASE64"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing or empty repository secrets:$missing (names must match exactly, see ANLEITUNG.md)"
+            exit 1
+          fi
           mkdir -p signing/profiles
           echo "$P12"     | base64 --decode > signing/mykey.p12
           echo "$CERT"    | base64 --decode > signing/mykey-debug.cer
