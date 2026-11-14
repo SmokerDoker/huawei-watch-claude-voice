@@ -746,7 +746,7 @@ private enum HermesAPI {
 
         var errorDescription: String? {
             switch self {
-            case .invalidURL: L("Enter the HTTPS address of the Hermes server.", "Hermes sunucusunun HTTPS adresini gir.")
+            case .invalidURL: L("Enter the HTTPS address of the Hermes server (plain http only to a private VPN IP).", "Hermes sunucusunun HTTPS adresini gir.")
             case .missingKey: L("Enter the Hermes API key.", "Hermes API anahtarını gir.")
             case .emptyReply: L("Hermes returned an empty or unreadable response.", "Hermes boş veya okunamayan bir yanıt verdi.")
             case .http(401): L("Hermes rejected the API key (401).", "Hermes API anahtarını kabul etmedi (401).")
@@ -763,7 +763,7 @@ private enum HermesAPI {
     static func ask(_ messages: [Message], server: String, apiKey: String,
                     onToolStart: (@MainActor () -> Void)?, model: String = "hermes-agent") async throws -> String {
         guard var url = URL(string: server.trimmingCharacters(in: .whitespacesAndNewlines)),
-              url.scheme?.lowercased() == "https", url.host != nil,
+              url.scheme?.lowercased() == "https" || isPrivateHTTP(url), url.host != nil,
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
             throw Failure.invalidURL
         }
@@ -802,6 +802,20 @@ private enum HermesAPI {
         let (data, response) = try await session.data(for: request)
         try validate(response)
         return try decodeReply(data)
+    }
+
+    /// Plain HTTP only to a literal private IPv4 address (WireGuard / home network), where the
+    /// tunnel already encrypts the traffic. Everything else must stay HTTPS.
+    static func isPrivateHTTP(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "http", let host = url.host else { return false }
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) else { return false }
+        switch (parts[0], parts[1]) {
+        case (10, _), (192, 168): return true
+        case (172, 16...31): return true
+        case (100, 64...127): return true   // CGNAT range used by Tailscale and some VPNs
+        default: return false
+        }
     }
 
     static func validate(_ response: URLResponse) throws {

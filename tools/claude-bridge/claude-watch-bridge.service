@@ -1,14 +1,28 @@
+# /etc/systemd/system/claude-watch-bridge.service
+# Runs the bridge as the unprivileged user claude-watch (its own Claude login, not the runner's).
 [Unit]
 Description=Claude watch bridge (watch voice -> Claude Code)
 After=network-online.target
+Wants=network-online.target
 
 [Service]
-ExecStart=/usr/bin/python3 %h/.local/share/claude-watch-bridge/bridge.py
-# Claude Code installed with the native installer lives in ~/.local/bin
-Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+User=claude-watch
+Group=claude-watch
+WorkingDirectory=/home/claude-watch
+ExecStart=/usr/bin/python3 /home/claude-watch/.local/share/claude-watch-bridge/bridge.py
+Environment=PATH=/home/claude-watch/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Listen on the VM's LAN address; ufw only lets the WireGuard net (10.0.0.0/24) in
+Environment=BRIDGE_HOST=192.168.0.5
 # Optional: Environment=CLAUDE_MODEL=sonnet
 Restart=on-failure
 RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/claude-watch
+CPUQuota=100%
+MemoryHigh=900M
+MemoryMax=1200M
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
