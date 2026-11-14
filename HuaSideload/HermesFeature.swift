@@ -313,6 +313,17 @@ final class HermesFeature: WatchFeature {
         return samples.withUnsafeBytes { Data($0) }
     }
 
+    /// Dictation language: the "voice.dictationLocale" setting if present, Turkish when the app is set to Turkish,
+    /// otherwise the iPhone's first preferred language (e.g. de-DE), so German speakers are understood.
+    static var dictationLocaleID: String {
+        if let saved = UserDefaults.standard.string(forKey: "voice.dictationLocale")?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !saved.isEmpty {
+            return saved
+        }
+        if AppLanguage.current == .turkish { return "tr-TR" }
+        return Locale.preferredLanguages.first ?? "en-US"
+    }
+
     private func startVoiceChat(provider: WatchVoiceProvider) async {
         guard !voiceCallActive, !sending, let speaker = host?.speaker, speaker.state == .idle else {
             sendToWatch(L("End the active voice call first.", "Önce açık ses oturumunu kapat."), to: hermesPackage)
@@ -334,10 +345,10 @@ final class HermesFeature: WatchFeature {
             SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
         }
         guard authorized, await AVAudioApplication.requestRecordPermission(),
-              let recognizer = SFSpeechRecognizer(locale: Locale(identifier: AppLanguage.current == .turkish ? "tr-TR" : "en-US")),
+              let recognizer = SFSpeechRecognizer(locale: Locale(identifier: Self.dictationLocaleID)),
               recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else {
             voiceCallActive = false
-            sendToWatch(L("Check microphone access and offline English speech recognition on the iPhone.", "iPhone’da mikrofon izni ve çevrimdışı Türkçe konuşma tanımayı kontrol et."), to: hermesPackage)
+            sendToWatch(L("Check microphone access and offline speech recognition (\(Self.dictationLocaleID)) on the iPhone.", "iPhone’da mikrofon izni ve çevrimdışı Türkçe konuşma tanımayı kontrol et."), to: hermesPackage)
             return
         }
 
@@ -524,6 +535,7 @@ private struct VoiceProviderSettings: View {
     @AppStorage("voice.claudeURL") private var claudeURL = ClaudeConfiguration.defaultURL
     @AppStorage("voice.claudeModel") private var claudeModel = ""
     @AppStorage("voice.claudeGateway") private var claudeGateway = false
+    @AppStorage("voice.dictationLocale") private var dictationLocale = ""
     @State private var codexKey = ""
     @State private var claudeKey = ""
     @State private var keyStatus = ""
@@ -561,6 +573,8 @@ private struct VoiceProviderSettings: View {
                 TextField(L("Model ID", "Model kimliği"), text: $claudeModel)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                 keyEditor(L("API key", "API anahtarı"), value: $claudeKey, account: account("claude", address: claudeURL))
+                TextField(L("Dictation language (empty = iPhone language, e.g. de-DE)", "Dikte dili (boş = iPhone dili, örn. tr-TR)"), text: $dictationLocale)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
                 Text(L("The iPhone reads Claude’s response aloud on the watch.", "Claude’un yanıtı iPhone’da seslendirilir ve saatten çalar."))
             }
             if !keyStatus.isEmpty { Text(keyStatus) }
@@ -616,6 +630,11 @@ private struct ClaudeConfiguration {
         struct Request: Encodable {
             let model: String
             let max_tokens = 512
+            let system = """
+                You are talking to the user through their smartwatch; your reply is read aloud over a phone-call line \
+                and shown on a small round screen. Answer in the language the user speaks. Keep it short: two or three \
+                spoken sentences unless asked for more. Plain text only: no markdown, lists, tables, emojis or URLs.
+                """
             let messages: [HermesAPI.Message]
         }
         struct Response: Decodable {

@@ -1,0 +1,151 @@
+# Builds the iPhone app (HuaSideload) without a Mac: an unsigned .ipa you sign and install from Windows
+# with Sideloadly or AltStore. Optionally builds and signs the "Voice" watch app and bundles it into the .ipa.
+#
+# Repository settings → Secrets and variables → Actions:
+#   Variable  BUNDLE_ID                  e.g. com.smokerdoker.huasideload  (watch app becomes <BUNDLE_ID>.voice)
+#   Secrets   (only for the watch app, see ANLEITUNG.md)
+#             WATCH_KEYSTORE_P12_BASE64  base64 of mykey.p12
+#             WATCH_KEY_PASSWORD         keystore / key password
+#             WATCH_CERT_BASE64          base64 of the debug .cer from AppGallery Connect
+#             WATCH_PROFILE_BASE64       base64 of the debug .p7b profile for <BUNDLE_ID>.voice
+#             WATCH_KEY_ALIAS            optional, default "mykey"
+name: Build iOS app (unsigned IPA)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      build_watch_app:
+        description: "Also build and sign the Voice watch app (needs the WATCH_* secrets)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      BUNDLE_ID: ${{ vars.BUNDLE_ID }}
+      OHOS_SDK: ${{ github.workspace }}/../ohos-sdk/9
+      OHOS_SDK_URL: https://mirrors.huaweicloud.com/openharmony/os/3.2.2/L2-SDK-MAC-M1-PUBLIC.tar.gz
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check settings
+        run: |
+          if ! [[ "$BUNDLE_ID" =~ ^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z][A-Za-z0-9-]*)+$ ]]; then
+            echo "::error::Set the repository variable BUNDLE_ID (e.g. com.yourname.huasideload). Current: '$BUNDLE_ID'"
+            exit 1
+          fi
+          echo "Phone app: $BUNDLE_ID"
+          echo "Watch app: $BUNDLE_ID.voice"
+          xcodebuild -version
+
+      # The upstream code uses com.example.huasideload.* for the watch apps; AppGallery Connect needs your own
+      # package names, and the iPhone app must use the same names to talk to them.
+      - name: Use your package names
+        run: |
+          grep -rl 'com\.example\.huasideload' HuaSideload watch-apps --include='*.swift' --include='config.json' \
+            | while read -r f; do sed -i '' "s/com\.example\.huasideload/${BUNDLE_ID}/g" "$f"; echo "patched $f"; done
+          printf 'HUASIDELOAD_TEAM_ID=\nHUASIDELOAD_BUNDLE_ID=%s\n' "$BUNDLE_ID" > Config/local.env
+
+      # ---------- optional: Voice watch app ----------
+      - name: Set up Node 16 (watch app compiler)
+        if: inputs.build_watch_app
+        uses: actions/setup-node@v4
+        with:
+          node-version: 16
+
+      - name: Set up Java 17 (watch app packing and signing)
+        if: inputs.build_watch_app
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Download OpenHarmony SDK (API 9)
+        if: inputs.build_watch_app
+        run: |
+          set -euo pipefail
+          tmp="$RUNNER_TEMP/ohos"; mkdir -p "$tmp" "$OHOS_SDK"
+          curl -fsSL --retry 3 -o "$tmp/sdk.tar.gz" "$OHOS_SDK_URL"
+          curl -fsSL --retry 3 -o "$tmp/sdk.tar.gz.sha256" "$OHOS_SDK_URL.sha256"
+          echo "$(awk '{print $1}' "$tmp/sdk.tar.gz.sha256")  $tmp/sdk.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$tmp/sdk.tar.gz" -C "$tmp"
+          for part in js toolchains; do
+            zip="$(find "$tmp" -name "${part}-*.zip" | head -1)"
+            [ -n "$zip" ] || { echo "::error::${part}-*.zip not found in the SDK"; find "$tmp" -maxdepth 6 | head -50; exit 1; }
+            unzip -q -o "$zip" -d "$OHOS_SDK"
+          done
+          ls "$OHOS_SDK"
+          test -d "$OHOS_SDK/js/build-tools/ace-loader"
+          chmod +x "$OHOS_SDK/toolchains/restool" || true
+          # macOS marks downloaded binaries as quarantined; the runner usually doesn't, but be safe
+          xattr -dr com.apple.quarantine "$OHOS_SDK" 2>/dev/null || true
+          cd "$OHOS_SDK/js/build-tools/ace-loader"
+          [ -d node_modules ] || npm install --no-audit --no-fund --loglevel=error
+
+      - name: Build and sign the Voice watch app
+        if: inputs.build_watch_app
+        env:
+          P12: ${{ secrets.WATCH_KEYSTORE_P12_BASE64 }}
+          PASS: ${{ secrets.WATCH_KEY_PASSWORD }}
+          CERT: ${{ secrets.WATCH_CERT_BASE64 }}
+          PROFILE: ${{ secrets.WATCH_PROFILE_BASE64 }}
+          ALIAS: ${{ secrets.WATCH_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          for v in P12 PASS CERT PROFILE; do
+            [ -n "${!v}" ] || { echo "::error::Secret for $v is missing (see ANLEITUNG.md)"; exit 1; }
+          done
+          mkdir -p signing/profiles
+          echo "$P12"     | base64 --decode > signing/mykey.p12
+          echo "$CERT"    | base64 --decode > signing/mykey-debug.cer
+          echo "$PROFILE" | base64 --decode > "signing/profiles/${BUNDLE_ID}.voice.p7b"
+          printf '%s' "$PASS" > signing/password.txt
+          cat > signing/signing.env <<EOF
+          SIGN_KEYSTORE=mykey.p12
+          SIGN_KEY_ALIAS=${ALIAS:-mykey}
+          SIGN_CERT=mykey-debug.cer
+          SIGN_PASSWORD_FILE=password.txt
+          EOF
+          sed -i '' 's/^ *//' signing/signing.env
+          NODE16="$(command -v node)" tools/build-watch-app.sh watch-apps/hermes
+          rm -rf signing/mykey.p12 signing/password.txt
+          ls -l WatchApps
+
+      # ---------- iPhone app ----------
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          ./generate.sh
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project HuaSideload.xcodeproj -target HuaSideload \
+            -configuration Release -sdk iphoneos \
+            SYMROOT="$PWD/build" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -40
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          app="build/Release-iphoneos/HuaSideload.app"
+          test -d "$app"
+          mkdir -p ipa/Payload
+          cp -R "$app" ipa/Payload/
+          echo "Bundled watch apps:"; ls ipa/Payload/HuaSideload.app/*.bin 2>/dev/null || echo "(none)"
+          (cd ipa && zip -qry ../HuaSideload-unsigned.ipa Payload)
+          ls -l HuaSideload-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HuaSideload-unsigned-ipa
+          path: HuaSideload-unsigned.ipa
+          retention-days: 14
