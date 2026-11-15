@@ -148,11 +148,16 @@ final class HealthStore: ObservableObject {
             status = L("Reading TruSleep…", "TruSleep okunuyor…")
             let files = SleepFiles(session: session)
             do {
-                var known = Set(data.truSleep)
-                for night in try await files.truSleepSessions(from: from - 86400, to: now) where known.insert(night).inserted {
+                for night in try await files.truSleepSessions(from: from - 86400, to: now) {
+                    if data.truSleep.contains(night) { continue }
+                    // a night still in progress shows up again later with a later end: keep the longer one
+                    let overlapping = data.truSleep.filter { $0.start < night.end && night.start < $0.end }
+                    if overlapping.contains(where: { $0.minutes >= night.minutes }) { continue }
+                    data.truSleep.removeAll { overlapping.contains($0) }
+                    data.truSleep.append(night)
                     newNights += 1
                 }
-                data.truSleep = known.sorted { $0.start < $1.start }
+                data.truSleep.sort { $0.start < $1.start }
                 truSleepNote = nil
             } catch {
                 truSleepNote = "TruSleep: \(error)"
@@ -224,6 +229,44 @@ final class HealthStore: ObservableObject {
     func sleep(endingOn day: Date) -> [SleepSegment] {
         let morning = Int(Calendar.current.startOfDay(for: day).timeIntervalSince1970)
         return data.sleep.filter { $0.start >= morning - 6 * 3600 && $0.start < morning + 14 * 3600 }
+    }
+
+    // MARK: - Raw sleep export (for working out sleep phases)
+
+    @Published private(set) var exportedFiles: [URL] = []
+
+    /// Downloads sleep_state.bin and sleep_data.bin for the last TruSleep night (±1 h) into Documents/sleep-export.
+    func exportLastNight(_ session: HuaweiSession) async {
+        guard !syncing, let night = data.truSleep.last else {
+            status = L("Sync first: no TruSleep night yet.", "Önce eşitle: henüz TruSleep gecesi yok.")
+            return
+        }
+        syncing = true
+        defer { syncing = false }
+        let from = night.start - 3600, to = night.end + 3600
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("sleep-export", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let stamp = Date(timeIntervalSince1970: TimeInterval(night.start))
+            .formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false).timeSeparator(.omitted))
+        let files = SleepFiles(session: session)
+        do {
+            status = L("Downloading raw sleep data… (can take a few minutes)", "Ham uyku verisi indiriliyor…")
+            let raw = try await files.truSleepRawData(from: from, to: to)
+            let state = try await files.truSleepStateRaw(from: from, to: to)
+            let rawURL = dir.appendingPathComponent("sleep_data_\(stamp).bin")
+            let stateURL = dir.appendingPathComponent("sleep_state_\(stamp).bin")
+            let infoURL = dir.appendingPathComponent("night_\(stamp).txt")
+            try Data(raw).write(to: rawURL)
+            try Data(state).write(to: stateURL)
+            let info = "night start \(night.start) end \(night.end) (\(night.minutes) min)\nrange \(from)-\(to)\n"
+                + "timezone \(TimeZone.current.identifier)\n" + files.log.joined(separator: "\n")
+            try Data(info.utf8).write(to: infoURL)
+            exportedFiles = [rawURL, stateURL, infoURL]
+            status = L("Exported \(raw.count / 1024) KB of raw sleep data.", "\(raw.count / 1024) KB ham uyku verisi dışa aktarıldı.")
+        } catch {
+            status = L("Export stopped: \(error)", "Dışa aktarma durdu: \(error)") + "\n" + files.log.joined(separator: "\n")
+        }
     }
 
     /// TruSleep sessions that end between 18:00 the day before and 14:00 on `day`.

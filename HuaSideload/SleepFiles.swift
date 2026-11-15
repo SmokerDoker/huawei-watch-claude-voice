@@ -39,9 +39,20 @@ final class SleepFiles {
 
     /// TruSleep sessions between `from` and `to` (unix seconds).
     func truSleepSessions(from: Int, to: Int) async throws -> [SleepSession] {
+        Self.parseState(try await truSleepStateRaw(from: from, to: to))
+    }
+
+    func truSleepStateRaw(from: Int, to: Int) async throws -> [UInt8] {
         let bytes = try await download(name: "sleep_state.bin", newType: 0x0E, from: from, to: to)
         log.append("sleep_state.bin: \(bytes.count) bytes")
-        return Self.parseState(bytes)
+        return bytes
+    }
+
+    /// Raw TruSleep sensor data (accelerometer per minute, PPG beats) between `from` and `to`, for offline analysis.
+    func truSleepRawData(from: Int, to: Int) async throws -> [UInt8] {
+        let bytes = try await download(name: "sleep_data.bin", newType: 0x0F, from: from, to: to)
+        log.append("sleep_data.bin: \(bytes.count) bytes")
+        return bytes
     }
 
     /// 16-byte records, little endian: start, end, 3 unknown bytes, 5 padding bytes.

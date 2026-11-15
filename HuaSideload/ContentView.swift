@@ -448,18 +448,33 @@ struct HealthDiagnosticsSection: View {
             if !today.spo2.isEmpty {
                 LabeledContent("SpO2", value: "\(today.spo2.min()!)–\(today.spo2.max()!) %")
             }
-            ForEach(store.truSleep(endingOn: Date()), id: \.self) { night in
-                LabeledContent(L("Sleep (TruSleep)", "Uyku (TruSleep)"),
-                               value: "\(Date(timeIntervalSince1970: TimeInterval(night.start)).formatted(date: .omitted, time: .shortened))–"
-                                    + "\(Date(timeIntervalSince1970: TimeInterval(night.end)).formatted(date: .omitted, time: .shortened))"
-                                    + " · \(night.minutes / 60) h \(night.minutes % 60) min")
+            if let night = store.data.truSleep.last {
+                let start = Date(timeIntervalSince1970: TimeInterval(night.start))
+                let end = Date(timeIntervalSince1970: TimeInterval(night.end))
+                LabeledContent(L("Last sleep (TruSleep)", "Son uyku (TruSleep)"),
+                               value: "\(start.formatted(.dateTime.weekday(.abbreviated).hour().minute()))–"
+                                    + "\(end.formatted(date: .omitted, time: .shortened)) · \(night.minutes / 60) h \(night.minutes % 60) min")
             }
-            if !sleep.isEmpty {
+            if store.data.truSleep.isEmpty && !sleep.isEmpty {
                 LabeledContent(L("Sleep segments (last night)", "Uyku bölümleri (dün gece)"),
                                value: "\(sleep.reduce(0) { $0 + $1.minutes }) min · \(sleep.count)×")
             }
             if let last = store.data.lastSync {
                 Text(L("Last sync: ", "Son eşitleme: ") + Date(timeIntervalSince1970: TimeInterval(last)).formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            DisclosureGroup(L("Sleep phase research", "Uyku evresi araştırması")) {
+                Button(L("Export raw data of last night", "Dün gecenin ham verisini dışa aktar")) {
+                    Task { await link.exportLastNight() }
+                }
+                .disabled(store.syncing)
+                if !store.exportedFiles.isEmpty {
+                    ShareLink(items: store.exportedFiles) {
+                        Label(L("Share the 3 files", "3 dosyayı paylaş"), systemImage: "square.and.arrow.up")
+                    }
+                }
+                Text(L("Send these files plus a screenshot of the same night in Huawei Health (deep/light/REM/awake minutes).",
+                       "Bu dosyaları ve aynı gecenin Huawei Health ekran görüntüsünü gönder."))
                     .font(.caption2).foregroundStyle(.secondary)
             }
             DisclosureGroup(L("Diagnostics", "Tanı")) {
