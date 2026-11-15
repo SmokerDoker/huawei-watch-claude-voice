@@ -5,9 +5,13 @@ from sleep_an import parse
 from digit import digitize
 TZ=dt.timezone(dt.timedelta(hours=8))
 def ts(y,mo,d,h,mi): return int(dt.datetime(y,mo,d,h,mi,tzinfo=TZ).timestamp())
+# night -> (Huawei Health screenshot in DATA_DIR/"Huawei Health", bed time, wake time)
 NIGHTS={
- '11/10':('sleep_data_2026-10-29T205000.bin','c9953d32',ts(2026,11,10,6,33),ts(2026,11,10,14,31)),
- '11/15':('sleep_data_2026-11-10T033500.bin','c448893b',ts(2026,11,15,4,32),ts(2026,11,15,9,46)),
+ '11/10':('Nov 10.JPG',ts(2026,11,10,6,33),ts(2026,11,10,14,31)),
+ '11/11':('Nov 11.JPG',ts(2026,11,11,4,37),ts(2026,11,11,10,44)),
+ '11/12':('Nov 12.JPG',ts(2026,11,12,1,36),ts(2026,11,12,10,57)),
+ '11/13':('Nov 13.JPG',ts(2026,11,13,7,44),ts(2026,11,13,16,8)),
+ '11/15':('Nov 15.JPG',ts(2026,11,15,4,32),ts(2026,11,15,9,46)),
 }
 LAB={'awake':0,'rem':1,'light':2,'deep':3}
 def minute_features(acc,ppg,start,end):
@@ -36,17 +40,28 @@ def minute_features(acc,ppg,start,end):
         F.append([a[0],a[1],a[2],hr,rmssd,sd,len(x)])
     return np.array(F)
 def labels(img,mins):
-    c=digitize(DATA_DIR+'/'+img+'-image.jpg')
+    c=digitize(os.path.join(DATA_DIR,'Huawei Health',img))
     out=[]
     for m in range(mins):
         k=c[min(len(c)-1,int(m*len(c)/mins))]
         out.append(LAB.get(k,-1))
     return np.array(out)
+def raw_records():
+    """All sleep_data*.bin under DATA_DIR merged; the watch returns its whole buffer per download,
+    so files overlap and records are de-duplicated by timestamp."""
+    import glob
+    acc={};ppg={}
+    for f in sorted(glob.glob(os.path.join(DATA_DIR,'**','sleep_data*.bin'),recursive=True)):
+        a,p=parse(f)
+        for r in a: acc[r[0]]=r
+        for r in p: ppg[r[0]]=r
+    return sorted(acc.values()),sorted(ppg.values())
 def load():
+    acc,ppg=raw_records()
     data={}
-    for n,(f,img,s,e) in NIGHTS.items():
-        acc,ppg=parse(DATA_DIR+'/'+f)
-        X=minute_features(acc,ppg,s,e); y=labels(img,len(X))
+    for n,(img,s,e) in NIGHTS.items():
+        X=minute_features([r for r in acc if s<=r[0]<e],[r for r in ppg if s-60<=r[0]<e],s,e)
+        y=labels(img,len(X))
         data[n]=(X,y)
     return data
 if __name__=='__main__':

@@ -8,8 +8,23 @@ def cls(c):
         d=sum((a-b)**2 for a,b in zip(c,v))
         if d<bd: bd,best=d,k
     return best if bd<3500 else None
-def digitize(path,y0=430,y1=700):
+def chart_rows(im):
+    # rows that contain hypnogram colours (the chart band), found automatically
+    W,H=im.size; small=im.resize((W//4,H//4)); rows=[]
+    for y in range(small.size[1]):
+        n=sum(1 for x in range(small.size[0]) if cls(small.getpixel((x,y))))
+        if n>=3: rows.append(y*4)
+    # largest contiguous band
+    best=(0,0);start=prev=None
+    for y in rows+[10**9]:
+        if prev is None or y-prev>40:
+            if start is not None and prev-start>best[1]-best[0]: best=(start,prev)
+            start=y
+        prev=y
+    return best[0]-4,best[1]+8
+def digitize(path,y0=None,y1=None):
     im=Image.open(path).convert('RGB');W=im.size[0]
+    if y0 is None: y0,y1=chart_rows(im)
     cols=[]
     for x in range(W):
         cnt={}

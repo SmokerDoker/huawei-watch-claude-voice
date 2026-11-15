@@ -82,6 +82,32 @@ final class SleepFiles {
         return (first, last)
     }
 
+    /// Records of sleep_data.bin whose timestamp lies in `from..<to`. The watch ignores the requested range and
+    /// hands out its whole buffer (about two weeks), so one download is split into nights with this.
+    static func slice(_ bytes: [UInt8], from: Int, to: Int) -> [UInt8] {
+        func le32(_ i: Int) -> Int { Int(bytes[i]) | Int(bytes[i + 1]) << 8 | Int(bytes[i + 2]) << 16 | Int(bytes[i + 3]) << 24 }
+        var out: [UInt8] = []
+        var i = 0
+        while i < bytes.count {
+            let tag = bytes[i]
+            var start = i + 1, length = 0
+            if tag == 0x01, i + 1 < bytes.count {
+                length = Int(bytes[i + 1]); start = i + 2
+            } else if tag == 0x02, i + 2 < bytes.count {
+                length = Int(bytes[i + 1]) | Int(bytes[i + 2]) << 8; start = i + 3
+            } else {
+                i += 1; continue   // unknown byte: skip, like the offline parser
+            }
+            guard start + length <= bytes.count else { break }
+            if length >= 4 {
+                let t = le32(start)
+                if t >= from && t < to { out.append(contentsOf: bytes[i..<(start + length)]) }
+            }
+            i = start + length
+        }
+        return out
+    }
+
     /// 16-byte records, little endian: start, end, 3 unknown bytes, 5 padding bytes.
     static func parseState(_ bytes: [UInt8]) -> [SleepSession] {
         func le32(_ i: Int) -> Int { Int(bytes[i]) | Int(bytes[i + 1]) << 8 | Int(bytes[i + 2]) << 16 | Int(bytes[i + 3]) << 24 }

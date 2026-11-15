@@ -25,3 +25,4 @@ node_modules/
 xcuserdata/
 .DS_Store
 tools/sleep-research/sleep-export/
+__pycache__/
