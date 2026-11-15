@@ -31,6 +31,7 @@ final class SleepFiles {
     private var target = 0
     private var waiter: CheckedContinuation<Void, Never>?
     private var waiterID = UUID()
+    private var oldSync = false
     private(set) var log: [String] = []
 
     init(session: HuaweiSession) { self.session = session }
@@ -99,6 +100,7 @@ final class SleepFiles {
     }
 
     private func downloadNew(name: String, type: UInt8, from: Int, to: Int) async throws -> [UInt8] {
+        oldSync = false
         let initTLV = HuaweiTLV().with(0x01, Array(name.utf8)).with(0x02, [type])
             .with(0x05, HealthProbe.be32(from)).with(0x06, HealthProbe.be32(to))
         let initReply = try await session.request(0x2C, 0x01, initTLV, label: "File init", timeout: 10, quiet: true)
@@ -117,20 +119,16 @@ final class SleepFiles {
         let timeout = max(info.tlv?.int(0x02) ?? 0, 10)
         let noEncrypt = (info.tlv?.value(0x05)?.first ?? 0) != 0
         received = []
-        while received.count < size {
-            let offset = received.count
-            let blockSize = min(maxBlock, size - offset)
-            target = offset + blockSize
-            session.send(0x2C, 0x04, HuaweiTLV().with(0x01, [fileId]).with(0x02, HealthProbe.be32(offset))
-                            .with(0x03, HealthProbe.be32(blockSize)), encrypted: !noEncrypt)
-            await waitForData(seconds: timeout)
-            if received.count < target { throw SleepFilesError.timeout(received.count, size) }
+        try await fetchBlocks(size: size, maxBlock: maxBlock, idle: timeout) { offset, blockSize in
+            self.session.send(0x2C, 0x04, HuaweiTLV().with(0x01, [fileId]).with(0x02, HealthProbe.be32(offset))
+                                .with(0x03, HealthProbe.be32(blockSize)), encrypted: !noEncrypt)
         }
         session.send(0x2C, 0x06, HuaweiTLV().with(0x01, [fileId]).with(0x02, [1]))
         return Array(received.prefix(size))
     }
 
     private func downloadOld(name: String, from: Int, to: Int) async throws -> [UInt8] {
+        oldSync = true
         let initTLV = HuaweiTLV().with(0x02, [0x01])
             .with(0x83, HuaweiTLV().with(0x04, HealthProbe.be32(from)).with(0x05, HealthProbe.be32(to)).serialize())
         let initReply = try await session.request(0x0A, 0x01, initTLV, label: "File list", timeout: 10, quiet: true)
@@ -146,17 +144,40 @@ final class SleepFiles {
         let size = info.tlv?.int(0x02) ?? 0
         log.append("old sync: \(size) bytes, blocks of \(maxBlock)")
         received = []
+        try await fetchBlocks(size: size, maxBlock: maxBlock, idle: timeout) { offset, blockSize in
+            self.session.send(0x0A, 0x04, HuaweiTLV().with(0x01, Array(name.utf8)).with(0x02, HealthProbe.be32(offset))
+                                .with(0x03, HealthProbe.be32(blockSize)))
+        }
+        session.send(0x0A, 0x06, HuaweiTLV().with(0x06, [0x01]))
+        return Array(received.prefix(size))
+    }
+
+    /// Requests the file block by block. Waits while data keeps coming (the idle timer restarts with every packet);
+    /// if the watch goes quiet mid-block, asks again from the current offset (up to 5 times in a row).
+    private func fetchBlocks(size: Int, maxBlock: Int, idle: Int,
+                             request: (_ offset: Int, _ blockSize: Int) -> Void) async throws {
+        var retries = 0
         while received.count < size {
             let offset = received.count
             let blockSize = min(maxBlock, size - offset)
             target = offset + blockSize
-            session.send(0x0A, 0x04, HuaweiTLV().with(0x01, Array(name.utf8)).with(0x02, HealthProbe.be32(offset))
-                            .with(0x03, HealthProbe.be32(blockSize)))
-            await waitForData(seconds: timeout)
-            if received.count < target { throw SleepFilesError.timeout(received.count, size) }
+            request(offset, blockSize)
+            var lastCount = received.count
+            while received.count < target {
+                await waitForData(seconds: idle)
+                if received.count == lastCount { break }   // nothing new during the idle time
+                lastCount = received.count
+            }
+            if received.count >= target {
+                retries = 0
+            } else {
+                retries += 1
+                log.append("watch went quiet at \(received.count)/\(size), asking again (\(retries))")
+                if retries > 5 { throw SleepFilesError.timeout(received.count, size) }
+                // the old protocol numbers packets per block: a partial block is requested again from its start
+                if oldSync { received.removeSubrange(offset...) }
+            }
         }
-        session.send(0x0A, 0x06, HuaweiTLV().with(0x06, [0x01]))
-        return Array(received.prefix(size))
     }
 
     // MARK: - Incoming data
@@ -184,7 +205,8 @@ final class SleepFiles {
             guard raw.count > 1 else { return }
             received += raw[1...]
         }
-        if received.count >= target, let waiter {
+        // wake the waiter on every packet: fetchBlocks restarts the idle timer
+        if let waiter {
             self.waiter = nil
             waiter.resume()
         }
