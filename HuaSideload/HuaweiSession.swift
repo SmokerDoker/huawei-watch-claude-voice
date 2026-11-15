@@ -336,6 +336,25 @@ final class HuaweiSession {
         sessionKey = try await hiChain(operation: 2, key: authToken!, deviceId: deviceId)
         isPaired = true
         log(.success, L("PAIRED! The connection to the watch is now encrypted.", "EŞLEŞME TAMAM! Artık saatle şifreli konuşuyoruz."))
+        finishSetup()
+    }
+
+    /// What Huawei Health sends after pairing so the watch leaves its "Pair" screen (Gadgetbridge init queue:
+    /// AcceptAgreementsRequest 0x01/0x30, SendSetUpDeviceStatusRequest 0x01/0x3E, DeviceStatus notify 0x01/0x16).
+    /// Sent on every connection, like Gadgetbridge; harmless when the watch is already set up.
+    func finishSetup() {
+        func be32(_ v: Int) -> [UInt8] { [UInt8(v >> 24 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v & 0xFF)] }
+        let now = Int(Date().timeIntervalSince1970)
+        var list = HuaweiTLV()
+        for name in ["software_update_service_statement", "device_information_management", "user_license_agreement"] {
+            let agreement = HuaweiTLV().with(0x03, Array(name.utf8)).with(0x04, be32(1))
+                .with(0x05, Array("20230508-20230508-0-0".utf8)).with(0x06, be32(now))
+            list = list.with(0x82, agreement.serialize())
+        }
+        send(0x01, 0x30, HuaweiTLV().with(0x81, list.serialize()))
+        send(0x01, 0x3E, HuaweiTLV().with(0x01, [1]).with(0x02, Array("iPhone".utf8)).with(0x03, [0]))
+        send(0x01, 0x16, HuaweiTLV().with(0x02, [0]), encrypted: false)
+        log(.info, L("Sent setup-finished messages to the watch", "Saate kurulum tamam mesajları gönderildi"))
     }
 
     // GetHiChainRequest: op 1 returns the permanent key (authToken), op 2 the session key
