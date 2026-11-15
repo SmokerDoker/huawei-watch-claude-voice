@@ -448,6 +448,12 @@ struct HealthDiagnosticsSection: View {
             if !today.spo2.isEmpty {
                 LabeledContent("SpO2", value: "\(today.spo2.min()!)–\(today.spo2.max()!) %")
             }
+            ForEach(store.truSleep(endingOn: Date()), id: \.self) { night in
+                LabeledContent(L("Sleep (TruSleep)", "Uyku (TruSleep)"),
+                               value: "\(Date(timeIntervalSince1970: TimeInterval(night.start)).formatted(date: .omitted, time: .shortened))–"
+                                    + "\(Date(timeIntervalSince1970: TimeInterval(night.end)).formatted(date: .omitted, time: .shortened))"
+                                    + " · \(night.minutes / 60) h \(night.minutes % 60) min")
+            }
             if !sleep.isEmpty {
                 LabeledContent(L("Sleep segments (last night)", "Uyku bölümleri (dün gece)"),
                                value: "\(sleep.reduce(0) { $0 + $1.minutes }) min · \(sleep.count)×")
@@ -473,8 +479,8 @@ struct HealthDiagnosticsSection: View {
         } header: {
             Text(L("Health (beta)", "Sağlık (beta)"))
         } footer: {
-            Text(L("Read-only. The phone keeps 90 days. Sleep phases (TruSleep) come in a later stage.",
-                   "Sadece okur. Telefon 90 gün saklar. Uyku evreleri (TruSleep) sonraki aşamada."))
+            Text(L("Read-only. The phone keeps 90 days. TruSleep gives start and end of the night; this watch has no sleep phases.",
+                   "Sadece okur. Telefon 90 gün saklar. TruSleep gecenin başlangıç ve bitişini verir; bu saatte uyku evresi yok."))
         }
     }
 }

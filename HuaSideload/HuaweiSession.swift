@@ -144,8 +144,26 @@ final class HuaweiSession {
         return packet
     }
 
+    /// File download data (0x0A/0x05 old sync, 0x2C/0x05 new sync) is pushed by the watch without a waiter.
+    var onFileBlock: ((HuaweiPacket) -> Void)?
+
+    /// Decrypts a raw (non-TLV) body that starts with the encryption TLV (7C=01, 7D=IV, 7E=cipher).
+    /// Returns nil when the body is not encrypted or cannot be decrypted.
+    func decryptRaw(_ body: [UInt8]) -> [UInt8]? {
+        guard body.count > 3, body[0] == 0x7C, let tlv = try? HuaweiTLV.parse(body),
+              tlv.value(0x7C)?.first == 1, let iv = tlv.value(0x7D), let cipher = tlv.value(0x7E),
+              let key = sessionKey, let link else { return nil }
+        return link.usesGCM
+            ? try? HCrypto.gcmOpen(cipher, key: key, nonce: iv)
+            : try? HCrypto.cbcDecrypt(cipher, key: key, iv: iv)
+    }
+
     // Requests started by the watch (AsynchronousResponse in Gadgetbridge); most are acknowledged with 0x7F = success
     private func handleUnsolicited(_ packet: HuaweiPacket) {
+        if isPaired, packet.commandId == 0x05, packet.serviceId == 0x0A || packet.serviceId == 0x2C, let onFileBlock {
+            onFileBlock(packet)
+            return
+        }
         if isPaired, packet.serviceId == FileUpload.serviceId, let tlv = packet.tlv {
             handleUpload(packet.commandId, tlv)
             return

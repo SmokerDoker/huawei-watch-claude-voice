@@ -91,6 +91,20 @@ enum HealthProbe {
                 }
             }
         }
+        // 4. TruSleep file (stage 3)
+        let files = SleepFiles(session: session)
+        do {
+            let nights = try await files.truSleepSessions(from: now - 3 * 86400, to: now)
+            out += files.log.map { "TruSleep: \($0)" }
+            let formatter = ISO8601DateFormatter()
+            for night in nights {
+                out.append("  night \(formatter.string(from: Date(timeIntervalSince1970: TimeInterval(night.start)))) – "
+                           + "\(formatter.string(from: Date(timeIntervalSince1970: TimeInterval(night.end)))) (\(night.minutes) min)")
+            }
+        } catch {
+            out += files.log.map { "TruSleep: \($0)" }
+            out.append("TruSleep: \(error)")
+        }
         out.append("=== end ===")
         return out.joined(separator: "\n")
     }

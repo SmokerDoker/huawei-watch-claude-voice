@@ -21,7 +21,19 @@ struct SleepSegment: Codable, Hashable {
 struct HealthData: Codable {
     var samples: [Int: MinuteSample] = [:]   // key: unix minute start
     var sleep: [SleepSegment] = []
+    var truSleep: [SleepSession] = []        // stage 3: night sessions from sleep_state.bin
     var lastSync: Int?
+
+    init() {}
+
+    // decodeIfPresent everywhere, so files from older versions keep loading
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        samples = try c.decodeIfPresent([Int: MinuteSample].self, forKey: .samples) ?? [:]
+        sleep = try c.decodeIfPresent([SleepSegment].self, forKey: .sleep) ?? []
+        truSleep = try c.decodeIfPresent([SleepSession].self, forKey: .truSleep) ?? []
+        lastSync = try c.decodeIfPresent(Int.self, forKey: .lastSync)
+    }
 }
 
 @MainActor
@@ -31,6 +43,8 @@ final class HealthStore: ObservableObject {
     @Published private(set) var data = HealthData()
     @Published private(set) var status: String?
     @Published private(set) var syncing = false
+    @Published private(set) var truSleepNote: String?
+    private(set) var fileLog: [String] = []
 
     private let url: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -104,7 +118,7 @@ final class HealthStore: ObservableObject {
         let now = Int(Date().timeIntervalSince1970)
         // first sync: last 7 days; afterwards from the last sync with one hour overlap
         let from = max((data.lastSync ?? 0) - 3600, now - 7 * 86400)
-        var newMinutes = 0, newSleep = 0
+        var newMinutes = 0, newSleep = 0, newNights = 0
         do {
             status = L("Reading activity…", "Aktivite okunuyor…")
             for block in try await records(session, count: HealthProbe.Command.stepCount,
@@ -130,14 +144,30 @@ final class HealthStore: ObservableObject {
                 }
             }
             data.sleep = segments.sorted { $0.start < $1.start }
+
+            status = L("Reading TruSleep…", "TruSleep okunuyor…")
+            let files = SleepFiles(session: session)
+            do {
+                var known = Set(data.truSleep)
+                for night in try await files.truSleepSessions(from: from - 86400, to: now) where known.insert(night).inserted {
+                    newNights += 1
+                }
+                data.truSleep = known.sorted { $0.start < $1.start }
+                truSleepNote = nil
+            } catch {
+                truSleepNote = "TruSleep: \(error)"
+            }
+            fileLog = files.log
             // keep 90 days on the phone
             let cutoff = now - 90 * 86400
             data.samples = data.samples.filter { $0.key >= cutoff }
             data.sleep.removeAll { $0.start < cutoff }
+            data.truSleep.removeAll { $0.start < cutoff }
             data.lastSync = now
             save()
-            status = L("Synced: \(newMinutes) new minutes, \(newSleep) sleep segments.",
-                       "Eşitlendi: \(newMinutes) yeni dakika, \(newSleep) uyku bölümü.")
+            status = L("Synced: \(newMinutes) new minutes, \(newSleep) sleep segments, \(newNights) TruSleep nights.",
+                       "Eşitlendi: \(newMinutes) yeni dakika, \(newSleep) uyku bölümü, \(newNights) TruSleep gecesi.")
+                + (truSleepNote.map { "\n" + $0 } ?? "")
         } catch {
             save()
             status = L("Sync stopped: \(error)", "Eşitleme durdu: \(error)")
@@ -196,6 +226,12 @@ final class HealthStore: ObservableObject {
         return data.sleep.filter { $0.start >= morning - 6 * 3600 && $0.start < morning + 14 * 3600 }
     }
 
+    /// TruSleep sessions that end between 18:00 the day before and 14:00 on `day`.
+    func truSleep(endingOn day: Date) -> [SleepSession] {
+        let morning = Int(Calendar.current.startOfDay(for: day).timeIntervalSince1970)
+        return data.truSleep.filter { $0.end >= morning - 6 * 3600 && $0.end < morning + 14 * 3600 }
+    }
+
     /// Plain-text summary for the last `days` days (used by the Claude bridge in stage 4).
     func textSummary(days: Int = 7) -> String {
         let calendar = Calendar.current
@@ -203,10 +239,12 @@ final class HealthStore: ObservableObject {
         for back in (0..<days).reversed() {
             guard let day = calendar.date(byAdding: .day, value: -back, to: Date()) else { continue }
             let s = summary(for: day)
-            let sleepMinutes = sleep(endingOn: day).reduce(0) { $0 + $1.minutes }
+            let nights = truSleep(endingOn: day)
+            let sleepMinutes = nights.isEmpty ? sleep(endingOn: day).reduce(0) { $0 + $1.minutes }
+                                              : nights.reduce(0) { $0 + $1.minutes }
             let hr = s.heartRates.isEmpty ? "-" : "\(s.heartRates.min()!)–\(s.heartRates.max()!) (Ø \(s.heartRates.reduce(0, +) / s.heartRates.count))"
             let dayText = day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
-            lines.append("\(dayText): \(s.steps) steps, \(s.calories / 1000) kcal, \(s.distance) m, HR \(hr), sleep segments \(sleepMinutes) min")
+            lines.append("\(dayText): \(s.steps) steps, \(s.calories / 1000) kcal, \(s.distance) m, HR \(hr), sleep \(sleepMinutes) min\(nights.isEmpty ? " (segments)" : " (TruSleep)")")
         }
         return lines.joined(separator: "\n")
     }
