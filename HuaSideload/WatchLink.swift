@@ -416,6 +416,12 @@ final class WatchLink: NSObject, ObservableObject {
         }
     }
 
+    /// Health sync stage 1: raw fitness data the watch hands out (see HealthProbe).
+    func healthDiagnostics() async -> String {
+        guard isPaired, let session else { return L("Pair the watch first.", "Önce saati eşle.") }
+        return await HealthProbe.run(session, watchInfo: watchInfo)
+    }
+
     // When launched from a Mac with HUASIDELOAD_DIAG=1: asks the watch about its audio and music capabilities
     private func runDiagnostics(_ session: HuaweiSession) async {
         try? await Task.sleep(for: .seconds(4))

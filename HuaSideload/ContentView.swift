@@ -33,6 +33,7 @@ struct ContentView: View {
                 } else {
                     watchSection
                     if link.isPaired { notificationSection }
+                    if link.isPaired && !filmMode { HealthDiagnosticsSection(link: link) }
                     if link.hasSavedPairing && !filmMode {
                         Section {
                             Button(L("Forget pairing", "Eşleşmeyi unut"), role: .destructive) { link.forgetPairing() }
@@ -412,6 +413,36 @@ private struct LogRow: View {
         case .received: return .purple
         case .success: return .green
         case .error: return .red
+        }
+    }
+}
+
+
+// Health sync stage 1: shows what fitness data the watch hands out, to copy into a bug report / chat.
+struct HealthDiagnosticsSection: View {
+    @ObservedObject var link: WatchLink
+    @State private var report = ""
+    @State private var running = false
+
+    var body: some View {
+        Section {
+            Button(running ? L("Reading…", "Okunuyor…") : L("Read health data (diagnostics)", "Sağlık verisini oku (tanı)")) {
+                running = true
+                Task {
+                    report = await link.healthDiagnostics()
+                    running = false
+                }
+            }
+            .disabled(running)
+            if !report.isEmpty {
+                Text(report).font(.caption2.monospaced()).textSelection(.enabled)
+                Button(L("Copy report", "Raporu kopyala")) { UIPasteboard.general.string = report }
+            }
+        } header: {
+            Text(L("Health (beta)", "Sağlık (beta)"))
+        } footer: {
+            Text(L("Asks the watch for today's totals and the step and sleep records. Read-only.",
+                   "Saatten bugünün toplamlarını ve adım/uyku kayıtlarını ister. Sadece okur."))
         }
     }
 }
