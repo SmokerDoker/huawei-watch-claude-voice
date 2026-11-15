@@ -111,6 +111,12 @@ final class HealthStore: ObservableObject {
 
     // MARK: - Sync
 
+    /// Next sync reaches back 30 days again (data already stored is kept and merged).
+    func fullResync(_ session: HuaweiSession) async {
+        data.lastSync = nil
+        await sync(session)
+    }
+
     func sync(_ session: HuaweiSession) async {
         guard !syncing else { return }
         syncing = true

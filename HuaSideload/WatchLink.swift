@@ -422,6 +422,11 @@ final class WatchLink: NSObject, ObservableObject {
         await HealthStore.shared.sync(session)
     }
 
+    func fullHealthResync() async {
+        guard isPaired, let session else { return }
+        await HealthStore.shared.fullResync(session)
+    }
+
     func exportNights() async {
         guard isPaired, let session else { return }
         await HealthStore.shared.exportNights(session)

@@ -470,6 +470,10 @@ struct HealthDiagnosticsSection: View {
                                    value: "\(night.minutes / 60) h \(night.minutes % 60) min" + (store.isExported(night) ? " ✓" : ""))
                         .font(.caption)
                 }
+                Button(L("Fetch everything again (30 days)", "Her şeyi yeniden al (30 gün)")) {
+                    Task { await link.fullHealthResync() }
+                }
+                .disabled(store.syncing)
                 let pending = store.data.truSleep.filter { !store.isExported($0) }.count
                 Button(L("Export raw data of all nights (\(pending) new)", "Tüm gecelerin ham verisini dışa aktar (\(pending) yeni)")) {
                     Task { await link.exportNights() }
