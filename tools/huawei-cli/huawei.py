@@ -5,6 +5,8 @@ framing (HuaweiPacket/TLV), AES-CBC/GCM, pairing with HiChain, requests and file
 """
 import asyncio
 import hashlib
+import socket
+import threading
 import hmac as hmaclib
 import json
 import os
@@ -276,7 +278,58 @@ class Watch:
                 await asyncio.sleep(2)
         raise last
 
+    # --- classic Bluetooth (RFCOMM on Huawei's SDP service 82FF3820-...), Gadgetbridge HuaweiBRSupport
+    async def connect_br(self, channel=None):
+        loop = asyncio.get_running_loop()
+        channels = [channel] if channel else list(range(1, 31))
+        probe = serialize(0x01, 0x01, TLV().add(1).add(2).add(3).add(4).serialize())
+        for ch in channels:
+            sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+            sock.settimeout(8)
+            try:
+                await loop.run_in_executor(None, sock.connect, (self.address, ch))
+            except OSError as e:
+                if self.verbose:
+                    log(f"RFCOMM channel {ch}: {e}")
+                sock.close()
+                continue
+            # check that this channel speaks the Huawei protocol
+            try:
+                sock.sendall(probe)
+                sock.settimeout(3)
+                data = await loop.run_in_executor(None, sock.recv, 1024)
+            except OSError:
+                data = b""
+            if data[:1] == b"\x5a":
+                log(f"RFCOMM channel {ch} answers with Huawei frames")
+                self.sock = sock
+                self.channel = ch
+                self.state["brChannel"] = ch
+                save_state(self.state)
+                sock.settimeout(None)
+                self.parser = Parser()   # drop the probe answer; pair() asks again
+                self._reader = threading.Thread(target=self._read_loop, args=(loop,), daemon=True)
+                self._reader.start()
+                return
+            log(f"RFCOMM channel {ch}: connected but no Huawei answer")
+            sock.close()
+        raise RuntimeError("no RFCOMM channel with the Huawei protocol found")
+
+    def _read_loop(self, loop):
+        while True:
+            try:
+                data = self.sock.recv(4096)
+            except OSError:
+                break
+            if not data:
+                break
+            loop.call_soon_threadsafe(self._notified, None, bytearray(data))
+        log("RFCOMM connection closed")
+
     async def disconnect(self):
+        if getattr(self, "sock", None):
+            self.sock.close()
+            self.sock = None
         if self.client and self.client.is_connected:
             await self.client.disconnect()
 
@@ -296,9 +349,15 @@ class Watch:
                     log("unhandled", p)
 
     def _max_write(self):
+        if getattr(self, "sock", None):
+            return 0xFFFF
         return max(20, (self.client.mtu_size or 23) - 3)
 
     async def _write(self, frames):
+        if getattr(self, "sock", None):
+            for f in frames:
+                self.sock.sendall(f)
+            return
         size = min(self.link.get("slice", 0xF4), self._max_write())
         for f in frames:
             for i in range(0, len(f), size):

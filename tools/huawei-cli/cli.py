@@ -120,9 +120,12 @@ class FileDownload:
         return bytes(self.buf[:size])
 
 
-async def session(address, verbose):
+async def session(address, verbose, br):
     w = Watch(address, verbose)
-    await w.connect()
+    if br:
+        await w.connect_br(w.state.get("brChannel"))
+    else:
+        await w.connect()
     await w.pair()
     return w
 
@@ -136,6 +139,7 @@ async def main():
     ap.add_argument("--file", default="data", choices=list(FILES))
     ap.add_argument("--out", default=str(Path.home() / "Desktop" / "Entwicklung" / "sleep-export" / "pc"))
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--ble", action="store_true", help="use Bluetooth LE instead of classic Bluetooth (RFCOMM)")
     a = ap.parse_args()
 
     if a.cmd == "scan":
@@ -143,7 +147,7 @@ async def main():
         return
     if not a.address:
         sys.exit("address missing (python cli.py scan)")
-    w = await session(a.address, a.verbose)
+    w = await session(a.address, a.verbose, br=not a.ble)
     try:
         if a.cmd == "info":
             log(await w.product_info())
