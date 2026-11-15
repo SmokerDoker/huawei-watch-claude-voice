@@ -62,6 +62,41 @@ WireGuard auf dem iPhone verbinden. Dann **Features → Hermes**:
 
 **Features → Voice Providers**: **Hermes Call** mit Stern markieren. Auf der Uhr: Voice → Hermes → Anruf annehmen → sprechen.
 
+## Optional: DocuSort-Staging von der Uhr
+
+`staging_mcp.py` gibt Claude feste Werkzeuge für den Staging-Stack: `staging_status`, `staging_stats`, `staging_logs`, `staging_up`, `staging_down`, `staging_restart`, `prod_status`, `host_stats`. Jedes ruft genau einen Befehl von `claude-ops` auf der DocuSort-VM auf (gleiche Kette wie beim Claude-Runner, aber mit **eigenem Schlüssel**). Keine Shell, keine freien Argumente, kein `staging-update` (dauert länger, als die Uhr wartet).
+
+**Runner-VM** (als `smokerdoker`):
+
+```bash
+sudo -u claude-watch install -d -m 700 /home/claude-watch/.ssh
+sudo -u claude-watch ssh-keygen -t ed25519 -N "" -C "claude-watch -> claude-ops" -f /home/claude-watch/.ssh/docusort_ops
+printf 'Host docusort-ops\n  HostName 192.168.0.4\n  User claude-ops\n  IdentityFile ~/.ssh/docusort_ops\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n' \
+  | sudo -u claude-watch tee /home/claude-watch/.ssh/config >/dev/null
+sudo install -o claude-watch -g claude-watch -m 644 /home/claude-runner/.ssh/known_hosts /home/claude-watch/.ssh/known_hosts
+sudo cat /home/claude-watch/.ssh/docusort_ops.pub      # für die DocuSort-VM
+```
+
+**DocuSort-VM**: an `/home/claude-ops/.ssh/authorized_keys` (gehört root) eine Zeile anhängen, mit denselben Einschränkungen wie beim Runner-Schlüssel (`ssh-ed25519 AAAA…` durch den ausgegebenen Schlüssel ersetzen):
+
+```bash
+echo 'restrict,from="192.168.0.5",command="sudo -n /usr/local/sbin/claude-ops" ssh-ed25519 AAAA… claude-watch -> claude-ops' \
+  | sudo tee -a /home/claude-ops/.ssh/authorized_keys
+```
+
+**Zurück auf der Runner-VM**: testen, MCP-Server installieren und anmelden:
+
+```bash
+sudo -iu claude-watch ssh docusort-ops staging-status
+cd /tmp && curl -fsSLO https://raw.githubusercontent.com/SmokerDoker/huawei-watch-claude-voice/main/tools/claude-bridge/staging_mcp.py
+sudo install -o claude-watch -g claude-watch -m 700 staging_mcp.py /home/claude-watch/.local/share/claude-watch-bridge/ && rm staging_mcp.py
+sudo -iu claude-watch /home/claude-watch/.local/bin/claude mcp add --scope user docusort-staging -- \
+  python3 /home/claude-watch/.local/share/claude-watch-bridge/staging_mcp.py
+sudo -iu claude-watch /home/claude-watch/.local/bin/claude mcp list
+```
+
+Jeder Aufruf landet auf der DocuSort-VM in `journalctl -t claude-ops`. Schlüssel widerrufen: die Zeile aus `authorized_keys` löschen.
+
 ## Sicherheit
 
 - Claude hat hier **keine Shell und keinen Dateizugriff** (`CLAUDE_DISALLOWED`), nur Konnektoren, MCP-Server und Websuche: E-Mails oder Termine können versteckte Anweisungen enthalten.
