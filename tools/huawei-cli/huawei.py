@@ -250,10 +250,11 @@ class Watch:
         last = None
         for attempt in range(1, attempts + 1):
             log(f"looking for {self.address} (attempt {attempt})")
-            device = await BleakScanner.find_device_by_address(self.address, timeout=20)
+            device = await BleakScanner.find_device_by_address(self.address, timeout=10)
             if device is None:
-                last = RuntimeError("watch not found: is it awake and not connected to the phone?")
-                continue
+                # a watch bonded with this PC no longer advertises: connect by address
+                log("not advertising, connecting by address (bonded?)")
+                device = self.address
             try:
                 kwargs = {"winrt": {"use_cached_services": False}} if os.name == "nt" else {}
                 # Huawei watches expect an OS-level Bluetooth bond (Gadgetbridge creates one too);
