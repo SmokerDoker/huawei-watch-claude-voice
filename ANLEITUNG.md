@@ -96,6 +96,11 @@ Unter *Settings → Secrets and variables → Actions → Secrets* anlegen:
 
 - **Antwort und Ja/Nein auf der Uhr:** Im Sprachchat mit Claude erscheint die ganze Antwort auf der Uhr (wischen zum Scrollen). Fragt Claude vor einer Aktion nach, kommen zwei Knöpfe **Ja** / **Nein**; gesprochenes „Ja“ geht auch. Wurde die Uhr-App vom Anrufbildschirm verdrängt: einfach wieder öffnen, die letzte Antwort kommt erneut.
 - **Handy suchen:** „Telefon suchen“ auf der Uhr lässt das iPhone klingeln und vibrieren – auch im Lautlos-Modus, nicht aber bei ganz leiser Lautstärke. Stoppt über die Uhr, durch Tippen auf die Mitteilung, beim Öffnen der App oder nach einer Minute. HuaSideload muss im Hintergrund laufen und Mitteilungen erlauben.
+- **Wetter auf der Uhr:** Saat-Tab → „Weather on the watch“: Stadt eintragen oder „Use my location“. Danach schickt die App das Wetter (Open-Meteo) nach jedem Verbinden, stündlich und wenn die Wetter-App der Uhr fragt.
+- **Trainings:** „Sync workouts“ (läuft auch bei „Sync health data“ mit) holt Zusammenfassung und GPS-Strecke. Antippen zeigt Karte, Tempo, Puls; „Share as GPX“ für Strava/Komoot.
+- **Uhr suchen:** „Find watch“ lässt die Uhr wie bei einem Anruf klingeln (max. 30 s).
+- **Fernauslöser:** Kamera-App „Remote shutter“ auf der Uhr oder „Remote shutter (camera)“ in der App. iOS erlaubt die Kamera nur, wenn HuaSideload offen ist; sonst kommt eine Mitteilung zum Öffnen. Fotos landen in der Fotos-App.
+- **Ruhepuls:** Schätzung aus den Pulswerten (niedrigster 10-Minuten-Schnitt). Stresswerte liefert die GT 3 Pro über das bekannte Protokoll nicht.
 - **Apple Health:** Mit einer kostenlosen Apple-ID nicht möglich: Apple gibt die HealthKit-Berechtigung nur mit bezahltem Entwicklerkonto (99 $/Jahr) frei, die App meldet sonst „Missing com.apple.developer.healthkit entitlement“. Der Code ist drin; mit bezahltem Konto die Repository-Variable `HEALTHKIT_IPA=1` setzen, dann baut der Workflow zusätzlich `HuaSideload-health.ipa`.
 - **Uhr hängt nach dem Koppeln auf „Pair“:** Die App schickt jetzt nach jeder Verbindung die Meldungen, mit denen Huawei Health die Einrichtung abschließt. Hängt sie trotzdem: Uhr in HuaSideload trennen und neu verbinden.
 
