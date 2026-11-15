@@ -416,6 +416,12 @@ final class WatchLink: NSObject, ObservableObject {
         }
     }
 
+    /// Health sync stage 2: stores per-minute activity and sleep segments on the phone (see HealthStore).
+    func syncHealth() async {
+        guard isPaired, let session else { return }
+        await HealthStore.shared.sync(session)
+    }
+
     /// Health sync stage 1: raw fitness data the watch hands out (see HealthProbe).
     func healthDiagnostics() async -> String {
         guard isPaired, let session else { return L("Pair the watch first.", "Önce saati eşle.") }

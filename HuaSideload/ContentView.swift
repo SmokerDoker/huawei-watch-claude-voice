@@ -418,31 +418,63 @@ private struct LogRow: View {
 }
 
 
-// Health sync stage 1: shows what fitness data the watch hands out, to copy into a bug report / chat.
+// Health: today's values from the synced per-minute data, last night's sleep segments, and the raw diagnostics.
 struct HealthDiagnosticsSection: View {
     @ObservedObject var link: WatchLink
+    @ObservedObject private var store = HealthStore.shared
     @State private var report = ""
     @State private var running = false
 
     var body: some View {
+        let today = store.summary(for: Date())
+        let sleep = store.sleep(endingOn: Date())
         Section {
-            Button(running ? L("Reading…", "Okunuyor…") : L("Read health data (diagnostics)", "Sağlık verisini oku (tanı)")) {
-                running = true
-                Task {
-                    report = await link.healthDiagnostics()
-                    running = false
-                }
+            Button(store.syncing ? L("Syncing…", "Eşitleniyor…") : L("Sync health data", "Sağlık verisini eşitle")) {
+                Task { await link.syncHealth() }
             }
-            .disabled(running)
-            if !report.isEmpty {
-                Text(report).font(.caption2.monospaced()).textSelection(.enabled)
-                Button(L("Copy report", "Raporu kopyala")) { UIPasteboard.general.string = report }
+            .disabled(store.syncing)
+            if let status = store.status { Text(status).font(.caption).foregroundStyle(.secondary) }
+            LabeledContent(L("Steps today", "Bugün adım"), value: "\(today.steps)")
+            LabeledContent(L("Distance", "Mesafe"), value: String(format: "%.2f km", Double(today.distance) / 1000))
+            LabeledContent(L("Active calories", "Aktif kalori"), value: "\(today.calories / 1000) kcal")
+            if !today.heartRates.isEmpty {
+                LabeledContent(L("Heart rate", "Nabız"),
+                               value: "\(today.heartRates.min()!)–\(today.heartRates.max()!) bpm, Ø \(today.heartRates.reduce(0, +) / today.heartRates.count)")
+            }
+            if let last = today.lastHeartRate {
+                LabeledContent(L("Last heart rate", "Son nabız"),
+                               value: "\(last.bpm) bpm · \(last.time.formatted(date: .omitted, time: .shortened))")
+            }
+            if !today.spo2.isEmpty {
+                LabeledContent("SpO2", value: "\(today.spo2.min()!)–\(today.spo2.max()!) %")
+            }
+            if !sleep.isEmpty {
+                LabeledContent(L("Sleep segments (last night)", "Uyku bölümleri (dün gece)"),
+                               value: "\(sleep.reduce(0) { $0 + $1.minutes }) min · \(sleep.count)×")
+            }
+            if let last = store.data.lastSync {
+                Text(L("Last sync: ", "Son eşitleme: ") + Date(timeIntervalSince1970: TimeInterval(last)).formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            DisclosureGroup(L("Diagnostics", "Tanı")) {
+                Button(running ? L("Reading…", "Okunuyor…") : L("Read raw health data", "Ham sağlık verisini oku")) {
+                    running = true
+                    Task {
+                        report = await link.healthDiagnostics()
+                        running = false
+                    }
+                }
+                .disabled(running)
+                if !report.isEmpty {
+                    Text(report).font(.caption2.monospaced()).textSelection(.enabled)
+                    Button(L("Copy report", "Raporu kopyala")) { UIPasteboard.general.string = report }
+                }
             }
         } header: {
             Text(L("Health (beta)", "Sağlık (beta)"))
         } footer: {
-            Text(L("Asks the watch for today's totals and the step and sleep records. Read-only.",
-                   "Saatten bugünün toplamlarını ve adım/uyku kayıtlarını ister. Sadece okur."))
+            Text(L("Read-only. The phone keeps 90 days. Sleep phases (TruSleep) come in a later stage.",
+                   "Sadece okur. Telefon 90 gün saklar. Uyku evreleri (TruSleep) sonraki aşamada."))
         }
     }
 }
