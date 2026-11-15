@@ -56,6 +56,32 @@ final class SleepFiles {
         return bytes
     }
 
+    /// First and last accelerometer timestamp in sleep_data.bin (tag 0x01, 1-byte length, LE timestamp, ...),
+    /// to check that the watch handed out the night that was asked for.
+    static func dataTimeRange(_ bytes: [UInt8]) -> (first: Int, last: Int)? {
+        var i = 0, first: Int?, last: Int?
+        while i < bytes.count {
+            let tag = bytes[i]; i += 1
+            if tag == 0x01 {
+                guard i < bytes.count else { break }
+                let length = Int(bytes[i]); i += 1
+                guard i + length <= bytes.count else { break }
+                if length >= 4 {
+                    let t = Int(bytes[i]) | Int(bytes[i + 1]) << 8 | Int(bytes[i + 2]) << 16 | Int(bytes[i + 3]) << 24
+                    if first == nil { first = t }
+                    last = t
+                }
+                i += length
+            } else if tag == 0x02 {
+                guard i + 1 < bytes.count else { break }
+                let length = Int(bytes[i]) | Int(bytes[i + 1]) << 8
+                i += 2 + length
+            }
+        }
+        guard let first, let last else { return nil }
+        return (first, last)
+    }
+
     /// 16-byte records, little endian: start, end, 3 unknown bytes, 5 padding bytes.
     static func parseState(_ bytes: [UInt8]) -> [SleepSession] {
         func le32(_ i: Int) -> Int { Int(bytes[i]) | Int(bytes[i + 1]) << 8 | Int(bytes[i + 2]) << 16 | Int(bytes[i + 3]) << 24 }
@@ -119,9 +145,15 @@ final class SleepFiles {
         let timeout = max(info.tlv?.int(0x02) ?? 0, 10)
         let noEncrypt = (info.tlv?.value(0x05)?.first ?? 0) != 0
         received = []
-        try await fetchBlocks(size: size, maxBlock: maxBlock, idle: timeout) { offset, blockSize in
-            self.session.send(0x2C, 0x04, HuaweiTLV().with(0x01, [fileId]).with(0x02, HealthProbe.be32(offset))
-                                .with(0x03, HealthProbe.be32(blockSize)), encrypted: !noEncrypt)
+        do {
+            try await fetchBlocks(size: size, maxBlock: maxBlock, idle: timeout) { offset, blockSize in
+                self.session.send(0x2C, 0x04, HuaweiTLV().with(0x01, [fileId]).with(0x02, HealthProbe.be32(offset))
+                                    .with(0x03, HealthProbe.be32(blockSize)), encrypted: !noEncrypt)
+            }
+        } catch {
+            // close the file on the watch, otherwise the next init may hand out this stale file again
+            session.send(0x2C, 0x06, HuaweiTLV().with(0x01, [fileId]).with(0x02, [1]))
+            throw error
         }
         session.send(0x2C, 0x06, HuaweiTLV().with(0x01, [fileId]).with(0x02, [1]))
         return Array(received.prefix(size))
@@ -144,9 +176,14 @@ final class SleepFiles {
         let size = info.tlv?.int(0x02) ?? 0
         log.append("old sync: \(size) bytes, blocks of \(maxBlock)")
         received = []
-        try await fetchBlocks(size: size, maxBlock: maxBlock, idle: timeout) { offset, blockSize in
-            self.session.send(0x0A, 0x04, HuaweiTLV().with(0x01, Array(name.utf8)).with(0x02, HealthProbe.be32(offset))
-                                .with(0x03, HealthProbe.be32(blockSize)))
+        do {
+            try await fetchBlocks(size: size, maxBlock: maxBlock, idle: timeout) { offset, blockSize in
+                self.session.send(0x0A, 0x04, HuaweiTLV().with(0x01, Array(name.utf8)).with(0x02, HealthProbe.be32(offset))
+                                    .with(0x03, HealthProbe.be32(blockSize)))
+            }
+        } catch {
+            session.send(0x0A, 0x06, HuaweiTLV().with(0x06, [0x01]))
+            throw error
         }
         session.send(0x0A, 0x06, HuaweiTLV().with(0x06, [0x01]))
         return Array(received.prefix(size))

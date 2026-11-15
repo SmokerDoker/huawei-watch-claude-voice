@@ -277,7 +277,7 @@ final class HealthStore: ObservableObject {
         }
         syncing = true
         defer { syncing = false; refreshExportedFiles() }
-        var done = 0, empty = 0, totalKB = 0
+        var done = 0, empty = 0, wrong = 0, totalKB = 0
         for (n, night) in nights.enumerated() {
             status = L("Downloading night \(n + 1) of \(nights.count)… (a few minutes each)",
                        "Gece \(n + 1)/\(nights.count) indiriliyor…")
@@ -291,6 +291,13 @@ final class HealthStore: ObservableObject {
                     + "timezone \(TimeZone.current.identifier)\n" + files.log.joined(separator: "\n")
                 try Data(info.utf8).write(to: exportDir.appendingPathComponent("night_\(stamp).txt"))
                 guard !raw.isEmpty else { empty += 1; continue }   // watch no longer has it: retry next time
+                // the watch sometimes hands out a different night: only keep data that overlaps this one
+                if let range = SleepFiles.dataTimeRange(raw), range.last < from || range.first > to {
+                    wrong += 1
+                    try Data((info + "\nwatch returned other data: \(range.first)-\(range.last)\n").utf8)
+                        .write(to: exportDir.appendingPathComponent("night_\(stamp).txt"))
+                    continue
+                }
                 try Data(state).write(to: exportDir.appendingPathComponent("sleep_state_\(stamp).bin"))
                 try Data(raw).write(to: exportDir.appendingPathComponent("sleep_data_\(stamp).bin"))
                 done += 1
@@ -302,7 +309,9 @@ final class HealthStore: ObservableObject {
             }
         }
         status = L("Exported \(done) nights (\(totalKB) KB)", "\(done) gece dışa aktarıldı (\(totalKB) KB)")
-            + (empty > 0 ? L(", \(empty) without data on the watch.", ", \(empty) gece saatte veri yok.") : ".")
+            + (empty > 0 ? L(", \(empty) without data on the watch", ", \(empty) gece saatte veri yok") : "")
+            + (wrong > 0 ? L(", \(wrong) answered with another night (not saved, retried next time).",
+                             ", \(wrong) gece başka veri döndü.") : ".")
     }
 
     /// TruSleep sessions that end between 18:00 the day before and 14:00 on `day`.
