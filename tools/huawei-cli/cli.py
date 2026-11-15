@@ -10,13 +10,14 @@ Times are local time of this PC unless they end with Z. Only one phone/PC can be
 switch off Bluetooth on the iPhone (or close HuaSideload) first.
 """
 import argparse
+import os
 import asyncio
 import datetime as dt
 import struct
 import sys
 from pathlib import Path
 
-from huawei import TLV, Watch, be32, find_watch, log
+from huawei import TLV, RelayWatch, Watch, be32, find_watch, log
 
 FILES = {"state": ("sleep_state.bin", 0x0E), "data": ("sleep_data.bin", 0x0F)}
 
@@ -120,7 +121,14 @@ class FileDownload:
         return bytes(self.buf[:size])
 
 
-async def session(address, verbose, br):
+async def session(address, verbose, br=True, token=None):
+    if address.startswith("relay:"):
+        token = token or os.environ.get("HUAWEI_RELAY_TOKEN")
+        if not token:
+            sys.exit("relay needs the token shown in the app: --token TOKEN or HUAWEI_RELAY_TOKEN")
+        w = RelayWatch(address, token, verbose)
+        await w.connect()
+        return w
     w = Watch(address, verbose)
     if br:
         await w.connect_br(w.state.get("brChannel"))
@@ -140,6 +148,7 @@ async def main():
     ap.add_argument("--out", default=str(Path.home() / "Desktop" / "Entwicklung" / "sleep-export" / "pc"))
     ap.add_argument("-v", "--verbose", action="store_true")
     ap.add_argument("--ble", action="store_true", help="use Bluetooth LE instead of classic Bluetooth (RFCOMM)")
+    ap.add_argument("--token", help="token of the HuaSideload PC relay (address relay:IP)")
     a = ap.parse_args()
 
     if a.cmd == "scan":
@@ -147,7 +156,7 @@ async def main():
         return
     if not a.address:
         sys.exit("address missing (python cli.py scan)")
-    w = await session(a.address, a.verbose, br=not a.ble)
+    w = await session(a.address, a.verbose, br=not a.ble, token=a.token)
     try:
         if a.cmd == "info":
             log(await w.product_info())

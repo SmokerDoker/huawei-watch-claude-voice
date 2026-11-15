@@ -87,6 +87,8 @@ final class HuaweiSession {
     // The watch's weather screen (0x0F/0x04) and remote shutter (0x01/0x29)
     var onWeatherRequest: ((HuaweiPacket) -> Void)?
     var onCameraRemote: ((HuaweiPacket) -> Void)?
+    // PC relay: sees every unsolicited packet (decrypted when it was a TLV), in addition to the normal handling
+    var onUnsolicitedForRelay: ((HuaweiPacket) -> Void)?
 
     private let store = WatchStore()
     private let writeFrame: ([UInt8]) -> Void
@@ -165,6 +167,7 @@ final class HuaweiSession {
 
     // Requests started by the watch (AsynchronousResponse in Gadgetbridge); most are acknowledged with 0x7F = success
     private func handleUnsolicited(_ packet: HuaweiPacket) {
+        onUnsolicitedForRelay?(packet)
         if isPaired, packet.commandId == 0x05, packet.serviceId == 0x0A || packet.serviceId == 0x2C, let onFileBlock {
             onFileBlock(packet)
             return

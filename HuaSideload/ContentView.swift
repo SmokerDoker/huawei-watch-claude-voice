@@ -63,6 +63,7 @@ struct ContentView: View {
             page(L("Features", "Özellikler")) {
                 if link.isPaired {
                     WatchSpeakerSection(speaker: link.speaker)
+                    if !filmMode { PCRelaySection() }
                     // Feature sections (navigation, remote control etc.); never in filming mode
                     if !filmMode {
                         ForEach(link.features.indices, id: \.self) { index in

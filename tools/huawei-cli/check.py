@@ -8,7 +8,7 @@ from huawei import TLV, be16, be32, log
 
 
 async def main(address):
-    w = await session(address, False, True)
+    w = await session(address, False, True, token=sys.argv[2] if len(sys.argv) > 2 else None)
     try:
         now = int(time.time())
         totals = (await w.request(0x07, 0x03, TLV().add(0x01))).tlv

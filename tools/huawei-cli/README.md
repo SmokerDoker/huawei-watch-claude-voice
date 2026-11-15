@@ -1,5 +1,18 @@
 # huawei-cli (PC tool for the watch)
 
+## Recommended: through the iPhone (no pairing with the PC)
+
+The watch stays paired with HuaSideload on the iPhone; the PC talks to it over Wi-Fi through the app:
+
+1. HuaSideload → Features → "PC relay" on (keep the app open; same Wi-Fi as the PC). It shows address and token.
+2. `py -3.10 cli.py info relay:192.168.x.y --token TOKEN` (or set `HUAWEI_RELAY_TOKEN`).
+   All commands work the same way: `sleep relay:… --from … --to …`, `probe relay:…`, `check.py relay:… TOKEN`.
+
+The phone encrypts and decrypts; every unsolicited packet from the watch (e.g. file blocks) is forwarded to the PC.
+Don't sync in the app at the same time as the PC tool runs.
+
+## Direct Bluetooth (only if needed)
+
 Python port of the Huawei Link protocol (from Gadgetbridge) to debug transfers from a Windows PC without new iOS builds.
 
 Setup: `py -3.10 -m pip install -r requirements.txt`

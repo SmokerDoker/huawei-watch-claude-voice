@@ -324,6 +324,7 @@ final class WatchLink: NSObject, ObservableObject {
             }
             self.features.forEach { $0.watchPaired() }
             CameraRemote.shared.attach(session)
+            PCRelay.shared.attach(session, watchName: self.connectedName ?? "")
             self.startWeatherUpdates(session)
             try await self.refreshInfo(session)
             Task { await self.offerNotificationIcon(session) }

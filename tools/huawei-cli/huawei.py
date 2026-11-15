@@ -514,6 +514,92 @@ class Watch:
                 (("model", 0x0A), ("name", 0x11), ("firmware", 0x07), ("serial", 0x09))}
 
 
+class RelayWatch(Watch):
+    """The watch through HuaSideload's PC relay (watch <-BT-> iPhone <-Wi-Fi-> PC): no pairing with the PC.
+    The phone encrypts/decrypts; requests and answers travel as JSON lines. Address: relay:HOST[:PORT]."""
+
+    def __init__(self, address, token, verbose=False):
+        super().__init__(address, verbose)
+        target = address[len("relay:"):]
+        self.host, _, port = target.partition(":")
+        self.port = int(port or 18651)
+        self.token = token
+        self.next_id = 0
+        self.pending = {}
+        self.reader = self.writer = None
+        self._task = None
+
+    async def connect(self, attempts=1):
+        log(f"connecting to the phone relay {self.host}:{self.port}")
+        self.reader, self.writer = await asyncio.wait_for(asyncio.open_connection(self.host, self.port), 10)
+        await self._send_json({"op": "hello", "token": self.token})
+        hello = json.loads(await asyncio.wait_for(self.reader.readline(), 10) or b"{}")
+        if not hello.get("ok"):
+            raise RuntimeError(f"relay refused: {hello.get('error', hello)}")
+        if not hello.get("paired"):
+            raise RuntimeError("the phone is not connected to the watch (open HuaSideload and connect)")
+        log(f"relay ok, watch {hello.get('watch')}")
+        self._task = asyncio.create_task(self._read_loop_relay())
+
+    async def pair(self):
+        pass  # the phone's session is already paired and encrypted
+
+    async def _send_json(self, message):
+        self.writer.write((json.dumps(message) + "\n").encode())
+        await self.writer.drain()
+
+    async def _read_loop_relay(self):
+        while True:
+            line = await self.reader.readline()
+            if not line:
+                log("relay connection closed")
+                for fut in self.pending.values():
+                    if not fut.done():
+                        fut.set_exception(ConnectionError("relay closed"))
+                return
+            message = json.loads(line)
+            if message.get("op") == "response":
+                fut = self.pending.pop(message.get("id"), None)
+                if fut and not fut.done():
+                    fut.set_result(message)
+            elif message.get("op") == "packet":
+                p = Packet(message["service"], message["command"], bytes.fromhex(message["body"]))
+                if self.verbose:
+                    log("<-", p)
+                if self.on_unsolicited:
+                    self.on_unsolicited(p)
+                elif self.verbose:
+                    log("unhandled", p)
+
+    async def send(self, service, command, tlv, encrypted=True):
+        if self.verbose:
+            log("->", f"{service:02X}/{command:02X}", tlv)
+        await self._send_json({"op": "send", "service": service, "command": command,
+                               "tlv": tlv.serialize().hex(), "encrypted": encrypted})
+
+    async def request(self, service, command, tlv, encrypted=True, sliced=False, timeout=10):
+        self.next_id += 1
+        fut = asyncio.get_running_loop().create_future()
+        self.pending[self.next_id] = fut
+        if self.verbose:
+            log("->", f"{service:02X}/{command:02X}", tlv)
+        await self._send_json({"op": "request", "id": self.next_id, "service": service, "command": command,
+                               "tlv": tlv.serialize().hex(), "encrypted": encrypted, "sliced": sliced, "timeout": timeout})
+        message = await asyncio.wait_for(fut, timeout + 5)
+        if "error" in message:
+            raise TimeoutError(f"{service:02X}/{command:02X}: {message['error']}")
+        p = Packet(message["service"], message["command"], bytes.fromhex(message["body"]))
+        if self.verbose:
+            log("<-", p)
+        return p
+
+    async def disconnect(self):
+        if self._task:
+            self._task.cancel()
+        if self.writer:
+            self.writer.close()
+
+
 async def find_watch(name_part="HUAWEI"):
     log("scanning 10 s…")
     devices = await BleakScanner.discover(timeout=10, return_adv=True)
