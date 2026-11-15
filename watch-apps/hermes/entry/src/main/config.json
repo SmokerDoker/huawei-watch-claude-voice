@@ -3,8 +3,8 @@
     "bundleName": "com.example.huasideload.voice",
     "vendor": "example",
     "version": {
-      "code": 2000002,
-      "name": "2.0.2"
+      "code": 2000003,
+      "name": "2.0.3"
     },
     "apiVersion": {
       "compatible": 6,

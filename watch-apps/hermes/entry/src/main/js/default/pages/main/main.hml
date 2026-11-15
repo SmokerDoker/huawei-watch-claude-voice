@@ -1,8 +1,23 @@
 <div class="container">
-    <text class="title">Voice</text>
-    <text class="status">{{reply}}</text>
-    <div class="button" if="{{!hasVoiceFavorites}}" onclick="startDefault"><text class="label">{{defaultLabel}}</text></div>
-    <div class="button" if="{{favoriteHermes}}" onclick="startProvider('hermes')"><text class="label">Hermes Call</text></div>
-    <div class="button" if="{{favoriteCodex}}" onclick="startProvider('codex')"><text class="label">ChatGPT Voice</text></div>
-    <div class="button" if="{{favoriteClaude}}" onclick="startProvider('claude')"><text class="label">Claude Voice</text></div>
+    <div class="screen" if="{{!showAnswer}}">
+        <text class="title">Voice</text>
+        <text class="status">{{reply}}</text>
+        <div class="button" if="{{!hasVoiceFavorites}}" onclick="startDefault"><text class="label">{{defaultLabel}}</text></div>
+        <div class="button" if="{{favoriteHermes}}" onclick="startProvider('hermes')"><text class="label">Hermes Call</text></div>
+        <div class="button" if="{{favoriteCodex}}" onclick="startProvider('codex')"><text class="label">ChatGPT Voice</text></div>
+        <div class="button" if="{{favoriteClaude}}" onclick="startProvider('claude')"><text class="label">Claude Voice</text></div>
+    </div>
+    <div class="screen" if="{{showAnswer}}">
+        <list class="answer">
+            <list-item class="line-item" for="{{lines}}">
+                <text class="line">{{$item.s}}</text>
+            </list-item>
+        </list>
+        <text class="question" if="{{question}}">{{question}}</text>
+        <div class="row" if="{{question && !confirmSent}}">
+            <div class="yes" onclick="confirm('yes')"><text class="label-small">Ja</text></div>
+            <div class="no" onclick="confirm('no')"><text class="label-small">Nein</text></div>
+        </div>
+        <div class="back" if="{{!question}}" onclick="closeAnswer"><text class="label-small">Zurück</text></div>
+    </div>
 </div>

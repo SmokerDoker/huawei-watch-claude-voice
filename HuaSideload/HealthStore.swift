@@ -179,6 +179,7 @@ final class HealthStore: ObservableObject {
             status = L("Synced: \(newMinutes) new minutes, \(newSleep) sleep segments, \(newNights) TruSleep nights.",
                        "Eşitlendi: \(newMinutes) yeni dakika, \(newSleep) uyku bölümü, \(newNights) TruSleep gecesi.")
                 + (truSleepNote.map { "\n" + $0 } ?? "")
+            if AppleHealth.shared.autoExport { await AppleHealth.shared.export(data) }
         } catch {
             save()
             status = L("Sync stopped: \(error)", "Eşitleme durdu: \(error)")

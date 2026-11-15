@@ -82,6 +82,8 @@ final class HuaweiSession {
     // Events from the watch's built-in music screen
     var onMusicScreenOpened: (() -> Void)?
     var onMusicButton: ((MusicControl.Button?, Int?) -> Void)?
+    // "Find phone" on the watch (service 0x0B, Gadgetbridge FindPhone): true = start ringing, false = stop
+    var onFindPhone: ((Bool) -> Void)?
 
     private let store = WatchStore()
     private let writeFrame: ([UInt8]) -> Void
@@ -182,6 +184,10 @@ final class HuaweiSession {
             let status = tlv.int(0x01) ?? -1
             let package = tlv.value(0x02).map { String(decoding: $0, as: UTF8.self) } ?? ""
             onAppInstallStatus?(status, package)
+            return
+        }
+        if isPaired, packet.serviceId == 0x0B, packet.commandId == 0x01 {
+            onFindPhone?(packet.tlv?.value(0x01)?.first == 1)
             return
         }
         guard isPaired, packet.serviceId == MusicControl.serviceId, let tlv = packet.tlv else {

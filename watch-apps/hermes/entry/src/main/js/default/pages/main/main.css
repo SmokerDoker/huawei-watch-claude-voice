@@ -40,3 +40,83 @@
     color: #FFFFFF;
     text-align: center;
 }
+
+.screen {
+    width: 466px;
+    height: 466px;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.answer {
+    width: 340px;
+    height: 240px;
+    margin-top: 20px;
+}
+
+.line-item {
+    width: 340px;
+    height: 34px;
+}
+
+.line {
+    width: 340px;
+    height: 34px;
+    font-size: 24px;
+    color: #FFFFFF;
+    text-align: center;
+}
+
+.question {
+    width: 320px;
+    height: 34px;
+    margin-top: 6px;
+    font-size: 22px;
+    color: #FFC94D;
+    text-align: center;
+}
+
+.row {
+    width: 320px;
+    height: 64px;
+    margin-top: 8px;
+    flex-direction: row;
+    justify-content: space-between;
+}
+
+.yes {
+    width: 150px;
+    height: 60px;
+    border-radius: 30px;
+    background-color: #2E9E55;
+    justify-content: center;
+    align-items: center;
+}
+
+.no {
+    width: 150px;
+    height: 60px;
+    border-radius: 30px;
+    background-color: #C8414B;
+    justify-content: center;
+    align-items: center;
+}
+
+.back {
+    width: 200px;
+    height: 56px;
+    margin-top: 14px;
+    border-radius: 28px;
+    background-color: #333A45;
+    justify-content: center;
+    align-items: center;
+}
+
+.label-small {
+    width: 140px;
+    height: 35px;
+    font-size: 26px;
+    color: #FFFFFF;
+    text-align: center;
+}

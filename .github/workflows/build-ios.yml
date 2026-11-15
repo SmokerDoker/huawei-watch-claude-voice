@@ -160,11 +160,15 @@ jobs:
           cp -R "$app" ipa/Payload/
           echo "Bundled watch apps:"; find ipa/Payload/HuaSideload.app -maxdepth 1 -name '*.bin' -exec basename {} \; | grep . || echo "(none)"
           (cd ipa && zip -qry ../HuaSideload-unsigned.ipa Payload)
+          # second IPA with the HealthKit entitlement (ad-hoc signature; Sideloadly re-signs and keeps the entitlement)
+          codesign --force --sign - --entitlements Config/health.entitlements ipa/Payload/HuaSideload.app
+          codesign -d --entitlements - ipa/Payload/HuaSideload.app 2>/dev/null | grep -q healthkit
+          (cd ipa && zip -qry ../HuaSideload-health.ipa Payload)
           command -v 7zz >/dev/null || brew install sevenzip
           # -mhe=on also encrypts the file names; the password comes from the secret and never reaches the log
-          7zz a -t7z -mhe=on -p"$ARTIFACT_PASSWORD" out/HuaSideload-unsigned-ipa.7z HuaSideload-unsigned.ipa >/dev/null
+          7zz a -t7z -mhe=on -p"$ARTIFACT_PASSWORD" out/HuaSideload-unsigned-ipa.7z HuaSideload-unsigned.ipa HuaSideload-health.ipa >/dev/null
           7zz t -p"$ARTIFACT_PASSWORD" out/HuaSideload-unsigned-ipa.7z >/dev/null
-          rm -rf ipa HuaSideload-unsigned.ipa build signing/profiles WatchApps/*.bin
+          rm -rf ipa HuaSideload-unsigned.ipa HuaSideload-health.ipa build signing/profiles WatchApps/*.bin
           ls -l out
 
       - uses: actions/upload-artifact@v4

@@ -21,6 +21,7 @@ Settings (environment variables, all optional except the key file):
 import hmac
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -49,9 +50,15 @@ SYSTEM_PROMPT = (
     "line and shown on a small round screen. Answer in the language the user speaks (usually German). "
     "Keep it short: two or three spoken sentences unless asked for more. Plain text only: no markdown, "
     "lists, tables, emojis or URLs. Use the user's connectors when the question needs them. Before "
-    "sending, deleting or changing anything (mail, events, files, messages), say exactly what you "
-    "would do and only do it after the user confirms in a later message."
+    "sending, deleting or changing anything (mail, events, files, messages, servers), say exactly what you "
+    "would do and only do it after the user confirms in a later message. Whenever you ask for such a "
+    "confirmation, end the reply with one extra line [[CONFIRM: short question, at most 40 characters]] "
+    "(the watch shows Ja/Nein buttons for it; it is not read aloud). Tools that change a server only work "
+    "in the turn right after the user confirmed."
 )
+CONFIRM_FILE = Path(os.environ.get("CONFIRM_FILE", HOME / ".local/share/claude-watch-bridge/confirm-grant"))
+CONFIRM_SECONDS = 150
+YES = re.compile(r"^\W*(ja|jo|jap|jawohl|yes|yep|ok|okay|klar|genau|mach (das|es)|bitte|bestätigt|los)\b", re.I)
 
 busy = threading.Lock()
 
@@ -71,12 +78,32 @@ def load_key() -> str:
 KEY = ""
 
 
+def update_confirmation(turns: list) -> None:
+    """A "yes" right after a reply that asked [[CONFIRM: ...]] grants one server-changing tool call
+    (staging_mcp.py checks and consumes the grant file). Anything else withdraws an open grant."""
+    question = str(turns[-1].get("content", "")).strip()
+    asked = len(turns) >= 2 and turns[-2].get("role") == "assistant" and "[[CONFIRM:" in str(turns[-2].get("content", ""))
+    yes = question == "[[JA]]" or (asked and bool(YES.match(question)))
+    try:
+        if asked and yes:
+            CONFIRM_FILE.parent.mkdir(parents=True, exist_ok=True)
+            CONFIRM_FILE.write_text(str(int(time.time()) + CONFIRM_SECONDS))
+            CONFIRM_FILE.chmod(0o600)
+        else:
+            CONFIRM_FILE.unlink(missing_ok=True)
+    except OSError as error:
+        sys.stderr.write(f"confirm grant: {error}\n")
+
+
 def build_prompt(messages: list) -> str:
     """claude -p takes one prompt, so earlier turns go in as a short transcript."""
     turns = [m for m in messages if isinstance(m, dict) and m.get("role") in ("user", "assistant")]
     if not turns or turns[-1].get("role") != "user":
         raise ValueError("the last message must come from the user")
+    update_confirmation(turns)
     question = str(turns[-1].get("content", "")).strip()
+    # Ja/Nein buttons on the watch
+    question = {"[[JA]]": "Ja, bestätigt (Knopf auf der Uhr).", "[[NEIN]]": "Nein, nicht ausführen (Knopf auf der Uhr)."}.get(question, question)
     if not question:
         raise ValueError("empty question")
     history = turns[:-1][-12:]

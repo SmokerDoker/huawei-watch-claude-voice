@@ -434,6 +434,7 @@ struct HealthDiagnosticsSection: View {
             }
             .disabled(store.syncing)
             if let status = store.status { Text(status).font(.caption).foregroundStyle(.secondary) }
+            AppleHealthRow()
             LabeledContent(L("Steps today", "Bugün adım"), value: "\(today.steps)")
             LabeledContent(L("Distance", "Mesafe"), value: String(format: "%.2f km", Double(today.distance) / 1000))
             LabeledContent(L("Active calories", "Aktif kalori"), value: "\(today.calories / 1000) kcal")
@@ -511,5 +512,21 @@ struct HealthDiagnosticsSection: View {
             Text(L("Read-only. The phone keeps 90 days. TruSleep gives start and end of the night; this watch has no sleep phases.",
                    "Sadece okur. Telefon 90 gün saklar. TruSleep gecenin başlangıç ve bitişini verir; bu saatte uyku evresi yok."))
         }
+    }
+}
+
+/// Apple Health export: manual button + "after every sync" toggle.
+struct AppleHealthRow: View {
+    @ObservedObject private var health = AppleHealth.shared
+    @ObservedObject private var store = HealthStore.shared
+
+    var body: some View {
+        Button(health.exporting ? L("Writing to Apple Health…", "Apple Sağlık'a yazılıyor…")
+                                : L("Export to Apple Health", "Apple Sağlık'a aktar")) {
+            Task { await health.export(store.data, all: true) }
+        }
+        .disabled(health.exporting || store.data.samples.isEmpty)
+        Toggle(L("Apple Health after every sync", "Her eşitlemeden sonra Apple Sağlık"), isOn: $health.autoExport)
+        if let status = health.status { Text(status).font(.caption).foregroundStyle(.secondary) }
     }
 }

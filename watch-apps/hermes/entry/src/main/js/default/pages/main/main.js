@@ -10,7 +10,11 @@ export default {
         favoriteHermes: false,
         favoriteCodex: false,
         favoriteClaude: false,
-        hasVoiceFavorites: false
+        hasVoiceFavorites: false,
+        showAnswer: false,
+        lines: [],
+        question: '',
+        confirmSent: false
     },
     onInit() {
         var page = this;
@@ -27,6 +31,9 @@ export default {
                 page.favoriteCodex = favorites.indexOf('codex') !== -1;
                 page.favoriteClaude = favorites.indexOf('claude') !== -1;
                 page.hasVoiceFavorites = page.favoriteHermes || page.favoriteCodex || page.favoriteClaude;
+            }
+            if (message.t === 'answer' && typeof message.s === 'string') {
+                page.receiveAnswer(message);
             }
             if (message.t === 'hermes-reply' && typeof message.s === 'string') {
                 clearTimeout(page.replyTimer);
@@ -49,6 +56,68 @@ export default {
         clearTimeout(this.replyTimer);
         this.waiting = false;
         bridge.listen(null);
+    },
+    // Answer arrives in parts: {t:'answer', i, n, s, q?}; q = question for the Ja/Nein buttons
+    receiveAnswer(message) {
+        clearTimeout(this.replyTimer);
+        this.waiting = false;
+        this.hasResponse = true;
+        if (message.i === 0 || !this.parts) {
+            this.parts = [];
+        }
+        this.parts[message.i] = message.s;
+        if (message.i !== message.n - 1) {
+            return;
+        }
+        var text = this.parts.join('');
+        this.parts = null;
+        this.lines = this.wrap(text, 26);
+        this.question = typeof message.q === 'string' ? message.q : '';
+        this.confirmSent = false;
+        this.showAnswer = true;
+        this.reply = text;
+    },
+    wrap(text, width) {
+        var words = text.split(' ');
+        var lines = [];
+        var line = '';
+        for (var i = 0; i < words.length; i++) {
+            var word = words[i];
+            while (word.length > width) {
+                if (line) { lines.push({ s: line }); line = ''; }
+                lines.push({ s: word.substring(0, width) });
+                word = word.substring(width);
+            }
+            if (!line) {
+                line = word;
+            } else if (line.length + 1 + word.length <= width) {
+                line = line + ' ' + word;
+            } else {
+                lines.push({ s: line });
+                line = word;
+            }
+        }
+        if (line) { lines.push({ s: line }); }
+        lines.push({ s: '' });
+        return lines;
+    },
+    confirm(answer) {
+        if (this.confirmSent) {
+            return;
+        }
+        var page = this;
+        this.confirmSent = true;
+        this.question = answer === 'yes' ? 'Ja gesendet…' : 'Nein gesendet…';
+        bridge.send({ t: 'confirm', s: answer }, function (ok) {
+            if (!ok) {
+                page.confirmSent = false;
+                page.question = 'Senden fehlgeschlagen';
+            }
+        });
+    },
+    closeAnswer() {
+        this.showAnswer = false;
+        this.question = '';
     },
     localized(english, turkish) {
         return this.language === 'tr' ? turkish : english;

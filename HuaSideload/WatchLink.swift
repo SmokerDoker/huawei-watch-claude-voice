@@ -81,6 +81,18 @@ final class WatchLink: NSObject, ObservableObject {
             self?.append(.success, L("⌚ Button on the watch: \(name)", "⌚ Saatten tuş: \(name)"))
             self?.musicScreenOwner?.musicButton(button, volume: volume)
         }
+        session.onFindPhone = { [weak self] start in
+            guard let self else { return }
+            if start {
+                self.append(.success, L("⌚ The watch is looking for the phone", "⌚ Saat telefonu arıyor"))
+                PhoneRinger.shared.start { [weak self] in
+                    // stopped on the phone: tell the watch so its "Find phone" screen closes
+                    self?.session.send(0x0B, 0x02, HuaweiTLV().with(0x01, [2]))
+                }
+            } else {
+                PhoneRinger.shared.stop(notifyWatch: false)
+            }
+        }
         session.onMusicFileInfo = { [weak self] index, fileName in
             guard let self else { return }
             let meta = self.musicMetadata[fileName] ?? ((fileName as NSString).deletingPathExtension, "")

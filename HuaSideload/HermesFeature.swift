@@ -29,6 +29,10 @@ final class HermesFeature: WatchFeature {
     private var voiceCallActive = false
 
     private var claudeHistory: [HermesAPI.Message] = []
+    // Ja/Nein tapped on the watch during a voice chat: taken as the next turn instead of speech
+    private var injectedTurn: String?
+    // last answer shown on the watch, re-sent when the watch app is opened again (e.g. after the call screen)
+    private var lastAnswer: (text: String, confirm: String?, at: Date)?
     private(set) var voiceFavorites = Set(
         (UserDefaults.standard.stringArray(forKey: "voice.favorites") ?? ["codex", "hermes"])
             .compactMap(WatchVoiceProvider.init(rawValue:))
@@ -109,6 +113,17 @@ final class HermesFeature: WatchFeature {
         case "voice-favorites":
             guard package == hermesPackage else { return false }
             sendFavorites()
+            if let last = lastAnswer, Date().timeIntervalSince(last.at) < 300 {
+                sendAnswerToWatch(last.text, confirm: last.confirm)
+            }
+        case "confirm":
+            guard package == hermesPackage else { return false }
+            guard voiceCallActive else {
+                sendAnswerToWatch(L("No voice chat is running.", "Açık sesli sohbet yok."), confirm: nil)
+                return true
+            }
+            injectedTurn = (message["s"] as? String) == "yes" ? "[[JA]]" : "[[NEIN]]"
+            lastAnswer?.confirm = nil
         case "voice-start":
             guard package == hermesPackage, let name = message["s"] as? String,
                   let provider = WatchVoiceProvider(rawValue: name) else { return false }
@@ -400,9 +415,11 @@ final class HermesFeature: WatchFeature {
                     let messages = claudeHistory + [.init(role: "user", content: turn)]
                     let reply = try await claude.ask(messages)
                     guard canTalk() else { return }
+                    // the history keeps the [[CONFIRM: …]] marker: the bridge needs it to accept a "yes"
                     claudeHistory = Array((messages + [.init(role: "assistant", content: reply)]).suffix(16))
-                    sendToWatch(reply, to: hermesPackage)
-                    await sayInCall(reply, speaker: speaker)
+                    let (spoken, question) = Self.splitConfirmation(reply)
+                    sendAnswerToWatch(spoken, confirm: question)
+                    await sayInCall(spoken, speaker: speaker)
                 } catch {
                     guard canTalk() else { return }
                     let message = L("Could not get a Claude response. ", "Claude yanıtı alınamadı. ") + error.localizedDescription
@@ -472,6 +489,10 @@ final class HermesFeature: WatchFeature {
             recognition.cancel()
         }
         while !Task.isCancelled && !finished && clock.now < deadline {
+            if let injected = injectedTurn {
+                injectedTurn = nil
+                return injected
+            }
             if !transcript.isEmpty && clock.now - lastChange >= .milliseconds(1800) { break }
             try? await Task.sleep(for: .milliseconds(100))
         }
@@ -484,6 +505,38 @@ final class HermesFeature: WatchFeature {
             }
         }
         return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Splits a trailing "[[CONFIRM: question]]" (asked for by the bridge's system prompt) from the answer.
+    static func splitConfirmation(_ reply: String) -> (text: String, question: String?) {
+        guard let range = reply.range(of: #"\[\[CONFIRM:\s*([^\]]*)\]\]"#, options: .regularExpression) else {
+            return (reply, nil)
+        }
+        let marker = String(reply[range])
+        let question = marker.dropFirst(10).dropLast(2).trimmingCharacters(in: .whitespaces)
+        var text = reply
+        text.removeSubrange(range)
+        return (text.trimmingCharacters(in: .whitespacesAndNewlines), question.isEmpty ? L("Confirm?", "Onayla?") : question)
+    }
+
+    /// Full answer for the watch's answer screen, in parts (Wear Engine messages stay under 1 KB).
+    private func sendAnswerToWatch(_ text: String, confirm: String?) {
+        lastAnswer = (text, confirm, Date())
+        guard let bridge = host?.bridge(for: hermesPackage) else { return }
+        let collapsed = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let limited = collapsed.count > 1200 ? String(collapsed.prefix(1200)) + "…" : collapsed
+        var parts: [String] = []
+        var current = ""
+        for character in limited {
+            if current.count >= 250 { parts.append(current); current = "" }
+            current.append(character)
+        }
+        parts.append(current)
+        for (index, part) in parts.enumerated() {
+            var message: [String: Any] = ["t": "answer", "i": index, "n": parts.count, "s": part]
+            if index == parts.count - 1, let confirm { message["q"] = String(confirm.prefix(60)) }
+            bridge.send(message)
+        }
     }
 
     private func sendToWatch(_ text: String, to package: String) {

@@ -12,9 +12,23 @@ import json
 import os
 import subprocess
 import sys
+import time
+from pathlib import Path
 
 SSH_HOST = os.environ.get("STAGING_SSH_HOST", "docusort-ops")
 SSH = os.environ.get("STAGING_SSH_BIN", "ssh")
+# written by bridge.py when the user said yes (voice or Ja button) to a [[CONFIRM: ...]] question
+CONFIRM_FILE = Path(os.environ.get("CONFIRM_FILE", Path.home() / ".local/share/claude-watch-bridge/confirm-grant"))
+
+
+def take_confirmation() -> bool:
+    """One server-changing call per confirmation: the grant is consumed here."""
+    try:
+        expires = int(CONFIRM_FILE.read_text().strip() or 0)
+        CONFIRM_FILE.unlink()
+    except (OSError, ValueError):
+        return False
+    return expires >= time.time()
 
 # name -> (claude-ops command, description, timeout seconds, changes something?)
 TOOLS = {
@@ -68,7 +82,10 @@ def call_tool(name, arguments):
     if name in TOOLS:
         if arguments:
             return "This tool takes no arguments.", True
-        command, _, timeout, _ = TOOLS[name]
+        command, _, timeout, changes = TOOLS[name]
+        if changes and not take_confirmation():
+            return ("Not confirmed. Ask the user first and end your reply with [[CONFIRM: <question>]]; "
+                    "the tool works in the turn right after the user says yes."), True
         return run_ops([command], timeout)
     if name == LOGS[0]:
         service = arguments.get("service", "server")
