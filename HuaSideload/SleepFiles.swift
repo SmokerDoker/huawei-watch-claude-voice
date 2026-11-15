@@ -123,6 +123,13 @@ final class SleepFiles {
         return result
     }
 
+    /// GPS route of a workout ("<number>_gps.bin", type 0x11, new file sync only; start/end are 0 for GPS).
+    func workoutGPS(number: Int) async throws -> [UInt8] {
+        session.onFileBlock = { [weak self] packet in self?.handleBlock(packet) }
+        defer { session.onFileBlock = nil }
+        return try await downloadNew(name: "\(number)_gps.bin", type: 0x11, from: 0, to: 0)
+    }
+
     // MARK: - Download
 
     private func download(name: String, newType: UInt8, from: Int, to: Int) async throws -> [UInt8] {

@@ -232,6 +232,26 @@ final class HealthStore: ObservableObject {
         return s
     }
 
+    /// Resting heart rate of the day: lowest 10-minute average of the readings (the watch measures every few minutes),
+    /// ignoring windows with fewer than 3 readings. Huawei's own value is not available over this protocol.
+    func restingHeartRate(for day: Date) -> Int? {
+        let start = Int(Calendar.current.startOfDay(for: day).timeIntervalSince1970) - 6 * 3600   // includes the night
+        let end = start + 30 * 3600
+        let readings = data.samples.filter { $0.key >= start && $0.key < end }
+            .compactMap { key, sample in sample.heartRate.flatMap { (30...200).contains($0) ? (key, $0) : nil } }
+            .sorted { $0.0 < $1.0 }
+        var best: Double?
+        var j = 0
+        for i in readings.indices {
+            while readings[i].0 - readings[j].0 >= 600 { j += 1 }
+            let window = readings[j...i]
+            guard window.count >= 3 else { continue }
+            let mean = Double(window.reduce(0) { $0 + $1.1 }) / Double(window.count)
+            if best == nil || mean < best! { best = mean }
+        }
+        return best.map { Int($0.rounded()) }
+    }
+
     /// Sleep segments between 18:00 the day before and 14:00 on `day`.
     func sleep(endingOn day: Date) -> [SleepSegment] {
         let morning = Int(Calendar.current.startOfDay(for: day).timeIntervalSince1970)

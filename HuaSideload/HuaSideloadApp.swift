@@ -14,7 +14,10 @@ struct HuaSideloadApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             // opening the app stops a "find phone" alarm
-            if phase == .active { PhoneRinger.shared.stop(notifyWatch: true) }
+            if phase == .active {
+                PhoneRinger.shared.stop(notifyWatch: true)
+                CameraRemote.shared.appBecameActive()
+            }
         }
     }
 }

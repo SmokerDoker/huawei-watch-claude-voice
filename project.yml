@@ -29,14 +29,17 @@ targets:
       path: HuaSideload/Info.plist
       properties:
         CFBundleDisplayName: HuaSideload
-        CFBundleShortVersionString: "2.1.0"
-        CFBundleVersion: "5"
+        CFBundleShortVersionString: "2.2.0"
+        CFBundleVersion: "6"
         NSBluetoothAlwaysUsageDescription: Needed to connect to your Huawei watch over Bluetooth.
         NSMicrophoneUsageDescription: Used to capture dictation when you start a Hermes voice session on your watch.
         NSLocalNetworkUsageDescription: Used to reach your own Claude bridge on your home or VPN network.
         # plain HTTP to the bridge's private VPN address; the app itself only allows it for private IPs
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        NSCameraUsageDescription: Lets the watch's remote shutter take photos with the iPhone camera.
+        NSPhotoLibraryAddUsageDescription: Saves photos taken with the watch's remote shutter.
+        NSLocationWhenInUseUsageDescription: Finds the place for the weather on your watch (only when you tap "Use my location").
         NSHealthUpdateUsageDescription: Writes steps, heart rate, SpO2 and sleep from your Huawei watch to Apple Health.
         NSHealthShareUsageDescription: Not used for reading; required by Apple Health together with writing.
         NSSpeechRecognitionUsageDescription: Used to turn your watch dictation into a text draft on your iPhone.

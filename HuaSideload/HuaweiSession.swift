@@ -84,6 +84,9 @@ final class HuaweiSession {
     var onMusicButton: ((MusicControl.Button?, Int?) -> Void)?
     // "Find phone" on the watch (service 0x0B, Gadgetbridge FindPhone): true = start ringing, false = stop
     var onFindPhone: ((Bool) -> Void)?
+    // The watch's weather screen (0x0F/0x04) and remote shutter (0x01/0x29)
+    var onWeatherRequest: ((HuaweiPacket) -> Void)?
+    var onCameraRemote: ((HuaweiPacket) -> Void)?
 
     private let store = WatchStore()
     private let writeFrame: ([UInt8]) -> Void
@@ -184,6 +187,14 @@ final class HuaweiSession {
             let status = tlv.int(0x01) ?? -1
             let package = tlv.value(0x02).map { String(decoding: $0, as: UTF8.self) } ?? ""
             onAppInstallStatus?(status, package)
+            return
+        }
+        if isPaired, packet.serviceId == 0x0F, packet.commandId == 0x04, let onWeatherRequest {
+            onWeatherRequest(packet)
+            return
+        }
+        if isPaired, packet.serviceId == 0x01, packet.commandId == 0x29, let onCameraRemote {
+            onCameraRemote(packet)
             return
         }
         if isPaired, packet.serviceId == 0x0B, packet.commandId == 0x01 {
@@ -647,6 +658,21 @@ final class HuaweiSession {
             onAppMessage(message.source, data)
         } else {
             log(.info, "P2P \(message.kind == P2P.Kind.ping ? "ping" : "data"): \(message.source) -> \(message.destination)")
+        }
+    }
+
+    /// "Find watch": rings the watch like an incoming call (notification type call 0x01) until stopped
+    /// (type 0x0C, like Gadgetbridge's StopNotificationRequest). Huawei has no separate find-watch command here.
+    private var findWatchId: UInt16?
+    func findWatch(_ start: Bool) {
+        if start {
+            notificationId &+= 1
+            findWatchId = notificationId
+            send(WatchNotification.serviceId, WatchNotification.commandId,
+                 WatchNotification.call(id: notificationId, name: L("Find watch", "Saati bul"), text: AppInfo.displayName))
+        } else if let id = findWatchId {
+            findWatchId = nil
+            send(WatchNotification.serviceId, WatchNotification.commandId, WatchNotification.stop(id: id))
         }
     }
 

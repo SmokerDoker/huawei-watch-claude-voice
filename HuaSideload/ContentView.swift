@@ -34,6 +34,7 @@ struct ContentView: View {
                     watchSection
                     if link.isPaired { notificationSection }
                     if link.isPaired && !filmMode { HealthDiagnosticsSection(link: link) }
+                    if link.isPaired && !filmMode { ExtrasSection(link: link) }
                     if link.hasSavedPairing && !filmMode {
                         Section {
                             Button(L("Forget pairing", "Eşleşmeyi unut"), role: .destructive) { link.forgetPairing() }
@@ -441,6 +442,9 @@ struct HealthDiagnosticsSection: View {
             if !today.heartRates.isEmpty {
                 LabeledContent(L("Heart rate", "Nabız"),
                                value: "\(today.heartRates.min()!)–\(today.heartRates.max()!) bpm, Ø \(today.heartRates.reduce(0, +) / today.heartRates.count)")
+            }
+            if let resting = store.restingHeartRate(for: Date()) {
+                LabeledContent(L("Resting heart rate (estimate)", "Dinlenme nabzı (tahmin)"), value: "\(resting) bpm")
             }
             if let last = today.lastHeartRate {
                 LabeledContent(L("Last heart rate", "Son nabız"),

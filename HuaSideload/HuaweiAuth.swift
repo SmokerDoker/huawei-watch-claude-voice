@@ -373,6 +373,20 @@ enum WatchNotification {
     private static let typeGeneric: UInt8 = 0x7F
     private static let contentFormat: UInt8 = 0x02   // Gadgetbridge: "Always 0x02"
 
+    /// Incoming-call style notification: the watch rings until it gets stop(id:)
+    static func call(id: UInt16, name: String, text: String) -> HuaweiTLV {
+        let elements = [(textTypeSender, name), (textTypeText, text)].map { type, value in
+            HuaweiTLV().with(0x0E, [type]).with(0x0F, [contentFormat]).with(0x10, Array(value.utf8)).serialize()
+        }
+        let list = elements.reduce(HuaweiTLV()) { $0.with(0x8D, $1) }
+        return HuaweiTLV().with(0x01, .bigEndian(id)).with(0x02, [0x01]).with(0x03, [0x01])
+            .with(0x84, HuaweiTLV().with(0x8C, list.serialize()).serialize())
+    }
+
+    static func stop(id: UInt16) -> HuaweiTLV {
+        HuaweiTLV().with(0x01, .bigEndian(id)).with(0x02, [0x0C]).with(0x03, [0x01]).with(0x04)
+    }
+
     static func request(id: UInt16, title: String, sender: String, text: String, appId: String? = nil) -> HuaweiTLV {
         let elements = [(textTypeTitle, title), (textTypeSender, sender), (textTypeText, text)].map { type, value -> [UInt8] in
             var element = HuaweiTLV().with(0x0E, [type]).with(0x0F, [contentFormat])

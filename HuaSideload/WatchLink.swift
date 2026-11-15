@@ -93,6 +93,14 @@ final class WatchLink: NSObject, ObservableObject {
                 PhoneRinger.shared.stop(notifyWatch: false)
             }
         }
+        session.onWeatherRequest = { [weak self] packet in
+            guard let self else { return }
+            WatchWeather.shared.handleWatchRequest(packet, session: self.session)
+        }
+        session.onCameraRemote = { [weak self] packet in
+            guard let self else { return }
+            CameraRemote.shared.handle(packet, session: self.session)
+        }
         session.onMusicFileInfo = { [weak self] index, fileName in
             guard let self else { return }
             let meta = self.musicMetadata[fileName] ?? ((fileName as NSString).deletingPathExtension, "")
@@ -315,6 +323,8 @@ final class WatchLink: NSObject, ObservableObject {
                 }
             }
             self.features.forEach { $0.watchPaired() }
+            CameraRemote.shared.attach(session)
+            self.startWeatherUpdates(session)
             try await self.refreshInfo(session)
             Task { await self.offerNotificationIcon(session) }
         }
@@ -432,6 +442,35 @@ final class WatchLink: NSObject, ObservableObject {
     func syncHealth() async {
         guard isPaired, let session else { return }
         await HealthStore.shared.sync(session)
+        await WorkoutStore.shared.sync(session)
+    }
+
+    func syncWorkouts(all: Bool = false) async {
+        guard isPaired, let session else { return }
+        await WorkoutStore.shared.sync(session, all: all)
+    }
+
+    func sendWeather() async {
+        guard isPaired, let session else { return }
+        await WatchWeather.shared.send(session, force: true)
+    }
+
+    func findWatch(_ start: Bool) {
+        guard isPaired, let session else { return }
+        session.findWatch(start)
+    }
+
+    // Weather right after connecting, then hourly while the connection lasts
+    private var weatherTask: Task<Void, Never>?
+    private func startWeatherUpdates(_ session: HuaweiSession) {
+        weatherTask?.cancel()
+        weatherTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            while !Task.isCancelled, let self, self.isPaired {
+                await WatchWeather.shared.send(session)
+                try? await Task.sleep(for: .seconds(3600))
+            }
+        }
     }
 
     func fullHealthResync() async {
