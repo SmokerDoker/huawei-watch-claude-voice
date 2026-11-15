@@ -246,12 +246,30 @@ class Watch:
         self.device_id = self.state["deviceId"].encode()
 
     # --- BLE
-    async def connect(self):
-        log("connecting", self.address)
-        self.client = BleakClient(self.address, timeout=30)
-        await self.client.connect()
-        log("connected, MTU", self.client.mtu_size)
-        await self.client.start_notify(NOTIFY, self._notified)
+    async def connect(self, attempts=3):
+        last = None
+        for attempt in range(1, attempts + 1):
+            log(f"looking for {self.address} (attempt {attempt})")
+            device = await BleakScanner.find_device_by_address(self.address, timeout=20)
+            if device is None:
+                last = RuntimeError("watch not found: is it awake and not connected to the phone?")
+                continue
+            try:
+                kwargs = {"winrt": {"use_cached_services": False}} if os.name == "nt" else {}
+                self.client = BleakClient(device, timeout=45, **kwargs)
+                await self.client.connect()
+                log("connected, MTU", self.client.mtu_size)
+                await self.client.start_notify(NOTIFY, self._notified)
+                return
+            except Exception as e:  # noqa: BLE001
+                last = e
+                log("connect failed:", type(e).__name__, e)
+                try:
+                    await self.client.disconnect()
+                except Exception:  # noqa: BLE001
+                    pass
+                await asyncio.sleep(2)
+        raise last
 
     async def disconnect(self):
         if self.client and self.client.is_connected:
