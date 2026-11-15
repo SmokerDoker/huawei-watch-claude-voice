@@ -24,3 +24,4 @@ node_modules/
 *.xcuserstate
 xcuserdata/
 .DS_Store
+tools/sleep-research/sleep-export/
