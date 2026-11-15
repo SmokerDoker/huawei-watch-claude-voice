@@ -256,7 +256,10 @@ class Watch:
                 continue
             try:
                 kwargs = {"winrt": {"use_cached_services": False}} if os.name == "nt" else {}
-                self.client = BleakClient(device, timeout=45, **kwargs)
+                # Huawei watches expect an OS-level Bluetooth bond (Gadgetbridge creates one too);
+                # pair=True lets Windows bond first. HUAWEI_PAIR=0 turns it off.
+                bond = os.environ.get("HUAWEI_PAIR", "1") != "0"
+                self.client = BleakClient(device, timeout=45, pair=bond, **kwargs)
                 await self.client.connect()
                 log("connected, MTU", self.client.mtu_size)
                 await self.client.start_notify(NOTIFY, self._notified)
