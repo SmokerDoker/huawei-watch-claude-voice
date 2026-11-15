@@ -253,6 +253,13 @@ final class HealthStore: ObservableObject {
             .formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false).timeSeparator(.omitted))
     }
 
+    /// Deletes all exported files on the phone (so every night is downloaded again).
+    func clearExports() {
+        try? FileManager.default.removeItem(at: exportDir)
+        refreshExportedFiles()
+        status = L("Exported files deleted.", "Dışa aktarılan dosyalar silindi.")
+    }
+
     /// Nights already exported (files present).
     func isExported(_ night: SleepSession) -> Bool {
         FileManager.default.fileExists(atPath: exportDir.appendingPathComponent("sleep_data_\(Self.stamp(night)).bin").path)

@@ -480,6 +480,8 @@ struct HealthDiagnosticsSection: View {
                 }
                 .disabled(store.syncing)
                 if !store.exportedFiles.isEmpty {
+                    Button(L("Delete exported files", "Dışa aktarılanları sil"), role: .destructive) { store.clearExports() }
+                        .disabled(store.syncing)
                     ShareLink(items: store.exportedFiles) {
                         Label(L("Share all exported files (\(store.exportedFiles.count))", "Tüm dosyaları paylaş (\(store.exportedFiles.count))"),
                               systemImage: "square.and.arrow.up")
