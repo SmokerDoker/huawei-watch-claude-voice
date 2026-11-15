@@ -464,13 +464,21 @@ struct HealthDiagnosticsSection: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             DisclosureGroup(L("Sleep phase research", "Uyku evresi araştırması")) {
-                Button(L("Export raw data of last night", "Dün gecenin ham verisini dışa aktar")) {
-                    Task { await link.exportLastNight() }
+                ForEach(store.data.truSleep.reversed(), id: \.self) { night in
+                    let start = Date(timeIntervalSince1970: TimeInterval(night.start))
+                    LabeledContent(start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute()),
+                                   value: "\(night.minutes / 60) h \(night.minutes % 60) min" + (store.isExported(night) ? " ✓" : ""))
+                        .font(.caption)
+                }
+                let pending = store.data.truSleep.filter { !store.isExported($0) }.count
+                Button(L("Export raw data of all nights (\(pending) new)", "Tüm gecelerin ham verisini dışa aktar (\(pending) yeni)")) {
+                    Task { await link.exportNights() }
                 }
                 .disabled(store.syncing)
                 if !store.exportedFiles.isEmpty {
                     ShareLink(items: store.exportedFiles) {
-                        Label(L("Share the 3 files", "3 dosyayı paylaş"), systemImage: "square.and.arrow.up")
+                        Label(L("Share all exported files (\(store.exportedFiles.count))", "Tüm dosyaları paylaş (\(store.exportedFiles.count))"),
+                              systemImage: "square.and.arrow.up")
                     }
                 }
                 Text(L("Send these files plus a screenshot of the same night in Huawei Health (deep/light/REM/awake minutes).",
@@ -492,7 +500,7 @@ struct HealthDiagnosticsSection: View {
                 }
             }
         } header: {
-            Text(L("Health (beta)", "Sağlık (beta)"))
+            Text(L("Health (beta)", "Sağlık (beta)")).onAppear { store.refreshExportedFiles() }
         } footer: {
             Text(L("Read-only. The phone keeps 90 days. TruSleep gives start and end of the night; this watch has no sleep phases.",
                    "Sadece okur. Telefon 90 gün saklar. TruSleep gecenin başlangıç ve bitişini verir; bu saatte uyku evresi yok."))

@@ -116,8 +116,8 @@ final class HealthStore: ObservableObject {
         syncing = true
         defer { syncing = false }
         let now = Int(Date().timeIntervalSince1970)
-        // first sync: last 7 days; afterwards from the last sync with one hour overlap
-        let from = max((data.lastSync ?? 0) - 3600, now - 7 * 86400)
+        // first sync: last 30 days (the watch hands out whatever it still has); afterwards from the last sync
+        let from = max((data.lastSync ?? 0) - 3600, now - 30 * 86400)
         var newMinutes = 0, newSleep = 0, newNights = 0
         do {
             status = L("Reading activity…", "Aktivite okunuyor…")
@@ -235,38 +235,68 @@ final class HealthStore: ObservableObject {
 
     @Published private(set) var exportedFiles: [URL] = []
 
-    /// Downloads sleep_state.bin and sleep_data.bin for the last TruSleep night (±1 h) into Documents/sleep-export.
-    func exportLastNight(_ session: HuaweiSession) async {
-        guard !syncing, let night = data.truSleep.last else {
-            status = L("Sync first: no TruSleep night yet.", "Önce eşitle: henüz TruSleep gecesi yok.")
-            return
-        }
-        syncing = true
-        defer { syncing = false }
-        let from = night.start - 3600, to = night.end + 3600
+    private var exportDir: URL {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("sleep-export", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let stamp = Date(timeIntervalSince1970: TimeInterval(night.start))
+        return dir
+    }
+
+    private static func stamp(_ night: SleepSession) -> String {
+        Date(timeIntervalSince1970: TimeInterval(night.start))
             .formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false).timeSeparator(.omitted))
-        let files = SleepFiles(session: session)
-        do {
-            status = L("Downloading raw sleep data… (can take a few minutes)", "Ham uyku verisi indiriliyor…")
-            let raw = try await files.truSleepRawData(from: from, to: to)
-            let state = try await files.truSleepStateRaw(from: from, to: to)
-            let rawURL = dir.appendingPathComponent("sleep_data_\(stamp).bin")
-            let stateURL = dir.appendingPathComponent("sleep_state_\(stamp).bin")
-            let infoURL = dir.appendingPathComponent("night_\(stamp).txt")
-            try Data(raw).write(to: rawURL)
-            try Data(state).write(to: stateURL)
-            let info = "night start \(night.start) end \(night.end) (\(night.minutes) min)\nrange \(from)-\(to)\n"
-                + "timezone \(TimeZone.current.identifier)\n" + files.log.joined(separator: "\n")
-            try Data(info.utf8).write(to: infoURL)
-            exportedFiles = [rawURL, stateURL, infoURL]
-            status = L("Exported \(raw.count / 1024) KB of raw sleep data.", "\(raw.count / 1024) KB ham uyku verisi dışa aktarıldı.")
-        } catch {
-            status = L("Export stopped: \(error)", "Dışa aktarma durdu: \(error)") + "\n" + files.log.joined(separator: "\n")
+    }
+
+    /// Nights already exported (files present).
+    func isExported(_ night: SleepSession) -> Bool {
+        FileManager.default.fileExists(atPath: exportDir.appendingPathComponent("sleep_data_\(Self.stamp(night)).bin").path)
+    }
+
+    /// All exported files, newest night first.
+    func refreshExportedFiles() {
+        let files = (try? FileManager.default.contentsOfDirectory(at: exportDir, includingPropertiesForKeys: nil)) ?? []
+        exportedFiles = files.sorted { $0.lastPathComponent > $1.lastPathComponent }
+    }
+
+    /// Downloads sleep_state.bin and sleep_data.bin for every TruSleep night that is not exported yet
+    /// (one night at a time, ±1 h around it) into Documents/sleep-export. Nights the watch no longer has stay empty.
+    func exportNights(_ session: HuaweiSession) async {
+        guard !syncing else { return }
+        let nights = data.truSleep.filter { !isExported($0) }.reversed()   // newest first
+        guard !nights.isEmpty else {
+            refreshExportedFiles()
+            status = data.truSleep.isEmpty ? L("Sync first: no TruSleep night yet.", "Önce eşitle: henüz TruSleep gecesi yok.")
+                                           : L("All nights are exported.", "Tüm geceler dışa aktarıldı.")
+            return
         }
+        syncing = true
+        defer { syncing = false; refreshExportedFiles() }
+        var done = 0, empty = 0, totalKB = 0
+        for (n, night) in nights.enumerated() {
+            status = L("Downloading night \(n + 1) of \(nights.count)… (a few minutes each)",
+                       "Gece \(n + 1)/\(nights.count) indiriliyor…")
+            let from = night.start - 3600, to = night.end + 3600
+            let files = SleepFiles(session: session)
+            do {
+                let raw = try await files.truSleepRawData(from: from, to: to)
+                let state = try await files.truSleepStateRaw(from: from, to: to)
+                let stamp = Self.stamp(night)
+                let info = "night start \(night.start) end \(night.end) (\(night.minutes) min)\nrange \(from)-\(to)\n"
+                    + "timezone \(TimeZone.current.identifier)\n" + files.log.joined(separator: "\n")
+                try Data(info.utf8).write(to: exportDir.appendingPathComponent("night_\(stamp).txt"))
+                guard !raw.isEmpty else { empty += 1; continue }   // watch no longer has it: retry next time
+                try Data(state).write(to: exportDir.appendingPathComponent("sleep_state_\(stamp).bin"))
+                try Data(raw).write(to: exportDir.appendingPathComponent("sleep_data_\(stamp).bin"))
+                done += 1
+                totalKB += raw.count / 1024
+            } catch {
+                status = L("Export stopped at night \(n + 1): \(error)", "Gece \(n + 1) durdu: \(error)")
+                    + "\n" + files.log.joined(separator: "\n")
+                return
+            }
+        }
+        status = L("Exported \(done) nights (\(totalKB) KB)", "\(done) gece dışa aktarıldı (\(totalKB) KB)")
+            + (empty > 0 ? L(", \(empty) without data on the watch.", ", \(empty) gece saatte veri yok.") : ".")
     }
 
     /// TruSleep sessions that end between 18:00 the day before and 14:00 on `day`.
