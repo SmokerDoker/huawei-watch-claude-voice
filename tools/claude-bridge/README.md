@@ -97,6 +97,19 @@ sudo -iu claude-watch /home/claude-watch/.local/bin/claude mcp list
 
 Jeder Aufruf landet auf der DocuSort-VM in `journalctl -t claude-ops`. Schlüssel widerrufen: die Zeile aus `authorized_keys` löschen.
 
+**Bestätigung (Ja/Nein auf der Uhr):** `staging_up`, `staging_down` und `staging_restart` laufen nur direkt nach einer Bestätigung. Claude stellt die Frage und hängt `[[CONFIRM: …]]` an; die Uhr zeigt dann Ja/Nein. Sagt oder tippt man „Ja“, schreibt die Bridge für 150 Sekunden eine Freigabe (`~/.local/share/claude-watch-bridge/confirm-grant`), die genau ein solcher Aufruf verbraucht. Ohne Freigabe lehnt `staging_mcp.py` ab – auch wenn Claude es versucht.
+
+## Aktualisieren
+
+Auf der Runner-VM im geklonten Repo (als `smokerdoker`):
+
+```bash
+git pull
+sudo install -o claude-watch -g claude-watch -m 700 tools/claude-bridge/bridge.py tools/claude-bridge/staging_mcp.py \
+  /home/claude-watch/.local/share/claude-watch-bridge/
+sudo systemctl restart claude-watch-bridge
+```
+
 ## Sicherheit
 
 - Claude hat hier **keine Shell und keinen Dateizugriff** (`CLAUDE_DISALLOWED`), nur Konnektoren, MCP-Server und Websuche: E-Mails oder Termine können versteckte Anweisungen enthalten.
