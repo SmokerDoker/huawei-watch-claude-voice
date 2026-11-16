@@ -18,10 +18,20 @@ struct SleepSegment: Codable, Hashable {
     var type: Int           // raw watch type (seen on GT 3 Pro: 1 and 3)
 }
 
+/// One automatic stress measurement (about every 30 minutes while resting). score 1–99; level 1 relaxed (1–29),
+/// 2 normal (30–59), 3 medium (60–79), 4 high (80–99). rri = mean beat interval in ms (one of the HRV values in the record).
+struct StressReading: Codable, Hashable {
+    var time: Int
+    var score: Int
+    var level: Int
+    var rri: Double?
+}
+
 struct HealthData: Codable {
     var samples: [Int: MinuteSample] = [:]   // key: unix minute start
     var sleep: [SleepSegment] = []
     var truSleep: [SleepSession] = []        // stage 3: night sessions from sleep_state.bin
+    var stress: [StressReading] = []         // file type 0x10 (found with the PC relay, not in Gadgetbridge)
     var lastSync: Int?
 
     init() {}
@@ -32,6 +42,7 @@ struct HealthData: Codable {
         samples = try c.decodeIfPresent([Int: MinuteSample].self, forKey: .samples) ?? [:]
         sleep = try c.decodeIfPresent([SleepSegment].self, forKey: .sleep) ?? []
         truSleep = try c.decodeIfPresent([SleepSession].self, forKey: .truSleep) ?? []
+        stress = try c.decodeIfPresent([StressReading].self, forKey: .stress) ?? []
         lastSync = try c.decodeIfPresent(Int.self, forKey: .lastSync)
     }
 }
@@ -168,12 +179,20 @@ final class HealthStore: ObservableObject {
             } catch {
                 truSleepNote = "TruSleep: \(error)"
             }
+            status = L("Reading stress…", "Stres okunuyor…")
+            let stressFrom = max((data.stress.last?.time ?? 0) + 1, now - 14 * 86400)
+            if let readings = try? await files.stress(from: stressFrom, to: now) {
+                let known = Set(data.stress.map(\.time))
+                data.stress += readings.filter { !known.contains($0.time) }
+                data.stress.sort { $0.time < $1.time }
+            }
             fileLog = files.log
             // keep 90 days on the phone
             let cutoff = now - 90 * 86400
             data.samples = data.samples.filter { $0.key >= cutoff }
             data.sleep.removeAll { $0.start < cutoff }
             data.truSleep.removeAll { $0.start < cutoff }
+            data.stress.removeAll { $0.time < cutoff }
             data.lastSync = now
             save()
             status = L("Synced: \(newMinutes) new minutes, \(newSleep) sleep segments, \(newNights) TruSleep nights.",

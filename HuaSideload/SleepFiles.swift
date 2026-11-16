@@ -123,6 +123,29 @@ final class SleepFiles {
         return result
     }
 
+    /// Automatic stress measurements: file type 0x10 over the new file sync. 48-byte header, then 66-byte records:
+    /// start (BE u32), end (BE u32), 4 unknown bytes, score, level, 4 unknown bytes, then BE float32 HRV values
+    /// (the 6th is the mean beat interval in ms). Format worked out with the PC relay on the GT 3 Pro.
+    func stress(from: Int, to: Int) async throws -> [StressReading] {
+        session.onFileBlock = { [weak self] packet in self?.handleBlock(packet) }
+        defer { session.onFileBlock = nil }
+        let raw = try await downloadNew(name: "stress_data.bin", type: 0x10, from: from, to: to)
+        func be32(_ i: Int) -> UInt32 { (0..<4).reduce(UInt32(0)) { $0 << 8 | UInt32(raw[i + $1]) } }
+        var readings: [StressReading] = []
+        var i = 48
+        while i + 66 <= raw.count {
+            let start = Int(be32(i))
+            let score = Int(raw[i + 12]), level = Int(raw[i + 13])
+            let rri = Double(Float(bitPattern: be32(i + 18 + 5 * 4)))
+            if start > 1_600_000_000, (1...99).contains(score) {
+                readings.append(StressReading(time: start, score: score, level: level, rri: rri.isFinite ? rri : nil))
+            }
+            i += 66
+        }
+        log.append("stress: \(raw.count) bytes, \(readings.count) readings")
+        return readings
+    }
+
     /// GPS route of a workout ("<number>_gps.bin", type 0x11, new file sync only; start/end are 0 for GPS).
     func workoutGPS(number: Int) async throws -> [UInt8] {
         session.onFileBlock = { [weak self] packet in self?.handleBlock(packet) }

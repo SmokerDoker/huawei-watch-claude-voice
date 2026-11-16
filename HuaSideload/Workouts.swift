@@ -85,7 +85,9 @@ final class WorkoutStore: ObservableObject {
             guard let container = count.tlv?.value(0x81).flatMap({ try? HuaweiTLV.parse($0) }) else {
                 throw HuaweiAuthError.unexpected("workout count TLV")
             }
-            let numbers = HealthProbe.objects(container, 0x85).compactMap { $0.int(0x06) }.sorted()
+            // with no workouts the watch still sends one placeholder item: only the first `count` (tag 0x02) are real
+            let total = container.int(0x02) ?? 0
+            let numbers = HealthProbe.objects(container, 0x85).prefix(total).compactMap { $0.int(0x06) }.sorted()
             var added = 0
             for (index, number) in numbers.enumerated() {
                 status = L("Workout \(index + 1) of \(numbers.count)…", "Antrenman \(index + 1)/\(numbers.count)…")

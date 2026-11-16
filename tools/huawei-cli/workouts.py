@@ -55,7 +55,7 @@ async def main():
         now = int(time.time())
         r = (await w.request(0x17, 0x07, TLV().add(0x81, TLV().add(0x03, be32(now - a.days * 86400)).add(0x04, be32(now)).serialize()))).tlv
         c = TLV.parse(r.get(0x81))
-        items = [TLV.parse(x) for x in c.all(0x85)]
+        items = [TLV.parse(x) for x in c.all(0x85)][:c.int(0x02) or 0]   # with none, one placeholder item comes anyway
         log(f"{len(items)} workouts in {a.days} days")
         for it in items:
             num, dcount, pcount = it.int(0x06), it.int(0x07) or 0, it.int(0x08) or 0

@@ -444,6 +444,14 @@ struct HealthDiagnosticsSection: View {
                 LabeledContent(L("Heart rate", "Nabız"),
                                value: "\(today.heartRates.min()!)–\(today.heartRates.max()!) bpm, Ø \(today.heartRates.reduce(0, +) / today.heartRates.count)")
             }
+            let dayStart = Int(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970)
+            let stressToday = store.data.stress.filter { $0.time >= dayStart }
+            if let latest = store.data.stress.last {
+                LabeledContent(L("Stress", "Stres"),
+                               value: (stressToday.isEmpty ? "" : L("today Ø \(stressToday.map(\.score).reduce(0, +) / stressToday.count) · ", "bugün Ø \(stressToday.map(\.score).reduce(0, +) / stressToday.count) · "))
+                               + L("last \(latest.score)", "son \(latest.score)") + " · "
+                               + Date(timeIntervalSince1970: TimeInterval(latest.time)).formatted(date: .omitted, time: .shortened))
+            }
             if let resting = store.restingHeartRate(for: Date()) {
                 LabeledContent(L("Resting heart rate (estimate)", "Dinlenme nabzı (tahmin)"), value: "\(resting) bpm")
             }
