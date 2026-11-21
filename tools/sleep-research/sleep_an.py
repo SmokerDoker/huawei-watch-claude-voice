@@ -3,21 +3,25 @@ DATA_DIR = os.environ.get('SLEEP_DATA', 'sleep-export')  # raw files + Huawei sc
 import struct,datetime as dt
 TZ=dt.timezone(dt.timedelta(hours=8))
 def decode_ppg(d):
+    """PPG record (about every 32 s at night): start time, n beats, peak times in 10 ms after the start, amplitudes.
+    Compressed peaks (0xbb): first value as u16, then UNSIGNED byte deltas (one beat interval each, 0xff = restart
+    with a new u16). Gadgetbridge reads the deltas as signed bytes, which flips every interval above 1.27 s."""
     t=struct.unpack('<I',d[:4])[0]; n=d[4]; i=5
-    def series(i):
+    def series(i, signed):
         tag=d[i];i+=1;out=[]
+        fmt='<h' if signed else '<H'
         if tag==0xaa:
-            for _ in range(n): out.append(struct.unpack('<h',d[i:i+2])[0]);i+=2
+            for _ in range(n): out.append(struct.unpack(fmt,d[i:i+2])[0]);i+=2
         elif tag==0xbb:
-            w=struct.unpack('<h',d[i:i+2])[0];i+=2;out.append(w)
+            w=struct.unpack(fmt,d[i:i+2])[0];i+=2;out.append(w)
             for _ in range(n-1):
                 c=d[i];i+=1
-                if c==0xff: w=struct.unpack('<h',d[i:i+2])[0];i+=2
-                else: w+= c-256 if c>127 else c
+                if c==0xff: w=struct.unpack(fmt,d[i:i+2])[0];i+=2
+                else: w+= (c-256 if c>127 else c) if signed else c
                 out.append(w)
         else: raise ValueError(hex(tag))
         return out,i
-    peak,i=series(i); amp,i=series(i)
+    peak,i=series(i, False); amp,i=series(i, True)
     return t,peak,amp
 def parse(path):
     b=open(path,'rb').read();i=0;acc=[];ppg=[]

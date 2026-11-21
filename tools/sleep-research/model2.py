@@ -14,6 +14,10 @@ def ctx(X):
     rm = X[:, 4].copy(); rm[np.isnan(rm)] = np.nanmedian(rm)
     hrn = (hr - np.median(hr)) / (np.std(hr) + 1e-6)
     rmn = (rm - np.median(rm)) / (np.std(rm) + 1e-6)
+    def norm(col):
+        v = X[:, col].copy(); v[np.isnan(v)] = np.nanmedian(v) if np.isfinite(np.nanmedian(v)) else 0
+        return (v - np.median(v)) / (np.std(v) + 1e-6)
+    hr5, rmssd5, sdnn5, pnn5 = norm(7), norm(8), norm(9), norm(10)
     still = (act < 20).astype(float)
     # nights in two blocks (woke up, slept again): sleep cycles restart, so time features count from the block start.
     # A block ends where the accelerometer has no data for 30+ minutes.
@@ -41,7 +45,8 @@ def ctx(X):
          hrn, roll(hrn, 3), roll(hrn, 10), roll(hrn, 5, np.std), roll(hrn, 15),
          rmn, roll(rmn, 3), roll(rmn, 10), roll(rmn, 5, np.std),
          roll(still, 7), roll(still, 20), pos, mins,
-         np.sin(2 * np.pi * mins / 1.5), np.cos(2 * np.pi * mins / 1.5)]
+         np.sin(2 * np.pi * mins / 1.5), np.cos(2 * np.pi * mins / 1.5),
+         hr5, rmssd5, sdnn5, pnn5, roll(rmssd5, 5), roll(rmssd5, 15), roll(hr5, 15), roll(sdnn5, 10), roll(pnn5, 10)]
     return np.column_stack(F)
 
 def smooth(p, w=2):

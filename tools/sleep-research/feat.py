@@ -25,24 +25,29 @@ def minute_features(acc,ppg,start,end):
     for t,v in acc:
         m=(t-start)//60
         if 0<=m<mins: act[m]=v[:3]
-    beats=[]  # absolute beat times (s)
+    beats=[]  # absolute beat times (s): record start + peak offset (10 ms)
     for t,peak,amp in ppg:
-        p=np.array(peak,float)
-        # peaks are offsets in 10 ms; sign may flip in compressed form
-        p=np.abs(p-p[0])+abs(p[0]) if len(p) else p
-        beats += list(t+np.sort(p)/100.0)
+        beats += [t+x/100.0 for x in peak]
     beats=np.array(sorted(set(beats)))
     ibi=np.diff(beats); bt=beats[1:]
-    ok=(ibi>0.33)&(ibi<2.0); ibi=ibi[ok]; bt=bt[ok]
+    ok=(ibi>0.33)&(ibi<2.0)
+    # drop intervals that jump >30 % from their neighbour (missed or extra beats)
+    rel=np.abs(np.diff(ibi,prepend=ibi[:1]))/np.maximum(ibi,1e-3)
+    ok&=rel<0.3
+    ibi=ibi[ok]; bt=bt[ok]
+    def hrv(x):
+        if len(x)<6: return [np.nan]*4
+        d=np.diff(x)
+        return [60/np.mean(x), np.sqrt(np.mean(d**2))*1000, np.std(x)*1000, np.mean(np.abs(d)>0.05)]
     F=[]
     for m in range(mins):
         a=act[m]
-        sel=(bt>=start+m*60)&(bt<start+(m+1)*60)
-        x=ibi[sel]
-        hr=60/np.mean(x) if len(x)>5 else np.nan
-        rmssd=np.sqrt(np.mean(np.diff(x)**2))*1000 if len(x)>5 else np.nan
-        sd=np.std(x)*1000 if len(x)>5 else np.nan
-        F.append([a[0],a[1],a[2],hr,rmssd,sd,len(x)])
+        t0=start+m*60
+        one=ibi[(bt>=t0)&(bt<t0+60)]
+        five=ibi[(bt>=t0-120)&(bt<t0+180)]
+        h1=hrv(one); h5=hrv(five)
+        # columns: act x3, hr, rmssd, sdnn, beats | hr5, rmssd5, sdnn5, pnn50_5
+        F.append([a[0],a[1],a[2],h1[0],h1[1],h1[2],len(one),h5[0],h5[1],h5[2],h5[3]])
     return np.array(F)
 def labels(img,mins):
     c=digitize(os.path.join(DATA_DIR,'Huawei Health',img))
