@@ -10,8 +10,10 @@ calibrated against Huawei Health's hypnograms of the same nights.
   buffer per download), cuts the nights listed in `NIGHTS` and aligns per-minute features with the screenshot labels.
 - `model.py` / `model2.py` – leave-one-night-out classifiers. v2 adds context features and balanced classes.
 
-Status (5 nights, 10–15 Nov): minute agreement ~55 %, phase totals off by ~25–30 min on average.
-REM vs light is the weak spot. More reference nights (screenshot + raw data within two weeks) will improve it.
+Status (10 nights, 10–21 Nov, leave-one-night-out): minute agreement ~56 % (37–72 % per night), phase totals off by
+~35 min (deep), ~50 min (light), ~35 min (REM). Doubling the nights did not help much: the inputs (1-minute activity
+counts + compressed PPG peaks) are the limit, mainly REM vs light. Next lever: decode real beat-to-beat intervals from PPG.
+Nights in two blocks: time features restart per block (a block ends after 30 min without accelerometer data).
 
 Raw data and screenshots are personal health data: keep them in `SLEEP_DATA` (default `./sleep-export`,
 screenshots in `SLEEP_DATA/Huawei Health/`), never in Git.

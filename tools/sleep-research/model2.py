@@ -15,8 +15,28 @@ def ctx(X):
     hrn = (hr - np.median(hr)) / (np.std(hr) + 1e-6)
     rmn = (rm - np.median(rm)) / (np.std(rm) + 1e-6)
     still = (act < 20).astype(float)
-    pos = np.arange(n) / n
-    mins = np.arange(n) / 60.0
+    # nights in two blocks (woke up, slept again): sleep cycles restart, so time features count from the block start.
+    # A block ends where the accelerometer has no data for 30+ minutes.
+    has = ~np.isnan(X[:, 0])
+    since = np.zeros(n); length = np.ones(n)
+    start, gap = 0, 0
+    for i in range(n):
+        gap = 0 if has[i] else gap + 1
+        if gap == 30:
+            start = None
+        if has[i] and start is None:
+            start = i
+        since[i] = i - (start if start is not None else i)
+    # block length for the relative position
+    i = 0
+    while i < n:
+        j = i
+        while j < n and (since[j] > 0 or j == i):
+            j += 1
+        length[i:j] = max(1, j - i)
+        i = j
+    pos = since / length
+    mins = since / 60.0
     F = [act, roll(act, 2), roll(act, 5), roll(act, 10), roll(act, 5, np.max), roll(act, 15),
          hrn, roll(hrn, 3), roll(hrn, 10), roll(hrn, 5, np.std), roll(hrn, 15),
          rmn, roll(rmn, 3), roll(rmn, 10), roll(rmn, 5, np.std),
@@ -42,7 +62,7 @@ if __name__ == '__main__':
                                      random_state=0).fit(Xtr[m], ytr[m])
         X, y = d[test]; p = smooth(clf.predict(ctx(X)))
         ok = y >= 0
-        pr = {inv[k]: int((p == k).sum()) for k in range(4)}
+        pr = {inv[k]: int((p[ok] == k).sum()) for k in range(4)}   # only minutes Huawei labelled (not gaps between blocks)
         hu = {inv[k]: int((y == k).sum()) for k in range(4)}
         err = {k: pr[k] - hu[k] for k in pr}
         errs.append([abs(err[k]) for k in ('deep', 'light', 'rem')])
