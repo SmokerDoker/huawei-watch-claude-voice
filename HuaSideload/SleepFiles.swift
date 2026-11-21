@@ -108,6 +108,74 @@ final class SleepFiles {
         return out
     }
 
+    /// Beat times (seconds) from the PPG records of sleep_data.bin: record start (LE u32) + peak offsets in 10 ms.
+    /// Compressed peaks (0xbb) are a u16 start plus UNSIGNED byte deltas, one beat interval each, 0xff = restart
+    /// (Gadgetbridge reads them signed and flips every interval above 1.27 s). Raw peaks (0xaa) are u16 values.
+    static func beatTimes(_ bytes: [UInt8]) -> [Double] {
+        func le16(_ i: Int) -> Int { Int(bytes[i]) | Int(bytes[i + 1]) << 8 }
+        func le32(_ i: Int) -> Int { le16(i) | le16(i + 2) << 16 }
+        var beats = Set<Double>()
+        var i = 0
+        while i < bytes.count {
+            let tag = bytes[i]
+            if tag == 0x01, i + 1 < bytes.count { i += 2 + Int(bytes[i + 1]); continue }
+            guard tag == 0x02, i + 2 < bytes.count else { i += 1; continue }
+            let length = le16(i + 1), start = i + 3, end = start + length
+            guard end <= bytes.count, length >= 8 else { break }
+            let time = Double(le32(start)), count = Int(bytes[start + 4])
+            var j = start + 5
+            let compression = bytes[j]; j += 1
+            var peaks: [Int] = []
+            if compression == 0xAA {
+                while peaks.count < count, j + 1 < end { peaks.append(le16(j)); j += 2 }
+            } else if compression == 0xBB, j + 1 < end {
+                var working = le16(j); j += 2
+                peaks.append(working)
+                while peaks.count < count, j < end {
+                    let c = bytes[j]; j += 1
+                    if c == 0xFF {
+                        guard j + 1 < end else { break }
+                        working = le16(j); j += 2
+                    } else {
+                        working += Int(c)
+                    }
+                    peaks.append(working)
+                }
+            }
+            for p in peaks { beats.insert(time + Double(p) / 100) }
+            i = end
+        }
+        return beats.sorted()
+    }
+
+    /// Night HRV from beat times: plausible intervals only (0.33–2 s, under 30 % jump), RMSSD per 5 minutes, averaged.
+    static func hrv(_ beats: [Double], from: Int, to: Int) -> NightHRV? {
+        let night = beats.filter { $0 >= Double(from) && $0 < Double(to) }
+        guard night.count > 200 else { return nil }
+        var intervals: [(time: Double, ibi: Double)] = []
+        for k in 1..<night.count {
+            let ibi = night[k] - night[k - 1]
+            guard ibi > 0.33, ibi < 2 else { continue }
+            if let previous = intervals.last?.ibi, abs(ibi - previous) / ibi > 0.3 { continue }
+            intervals.append((night[k], ibi))
+        }
+        var rmssds: [Double] = [], rates: [Double] = []
+        var windowStart = Double(from)
+        while windowStart < Double(to) {
+            let window = intervals.filter { $0.time >= windowStart && $0.time < windowStart + 300 }.map(\.ibi)
+            if window.count >= 60 {
+                let diffs = zip(window.dropFirst(), window).map { $0 - $1 }
+                rmssds.append((diffs.map { $0 * $0 }.reduce(0, +) / Double(diffs.count)).squareRoot() * 1000)
+                rates.append(60 / (window.reduce(0, +) / Double(window.count)))
+            }
+            windowStart += 300
+        }
+        guard !rmssds.isEmpty else { return nil }
+        let mean = 60 / (intervals.map(\.ibi).reduce(0, +) / Double(intervals.count))
+        return NightHRV(rmssd: Int((rmssds.reduce(0, +) / Double(rmssds.count)).rounded()), heartRate: Int(mean.rounded()),
+                        lowest: Int((rates.min() ?? mean).rounded()), beats: intervals.count)
+    }
+
     /// 16-byte records, little endian: start, end, 3 unknown bytes, 5 padding bytes.
     static func parseState(_ bytes: [UInt8]) -> [SleepSession] {
         func le32(_ i: Int) -> Int { Int(bytes[i]) | Int(bytes[i + 1]) << 8 | Int(bytes[i + 2]) << 16 | Int(bytes[i + 3]) << 24 }

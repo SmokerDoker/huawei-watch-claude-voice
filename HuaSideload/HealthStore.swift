@@ -27,11 +27,21 @@ struct StressReading: Codable, Hashable {
     var rri: Double?
 }
 
+/// Heart rate variability of one night from beat-to-beat intervals: rmssd = mean of 5-minute RMSSD values (ms),
+/// heartRate = mean, lowest = lowest 5-minute mean (bpm).
+struct NightHRV: Codable, Hashable {
+    var rmssd: Int
+    var heartRate: Int
+    var lowest: Int
+    var beats: Int
+}
+
 struct HealthData: Codable {
     var samples: [Int: MinuteSample] = [:]   // key: unix minute start
     var sleep: [SleepSegment] = []
     var truSleep: [SleepSession] = []        // stage 3: night sessions from sleep_state.bin
     var stress: [StressReading] = []         // file type 0x10 (found with the PC relay, not in Gadgetbridge)
+    var nightHRV: [Int: NightHRV] = [:]      // key: TruSleep night start; from the PPG beat times in sleep_data.bin
     var lastSync: Int?
 
     init() {}
@@ -43,6 +53,7 @@ struct HealthData: Codable {
         sleep = try c.decodeIfPresent([SleepSegment].self, forKey: .sleep) ?? []
         truSleep = try c.decodeIfPresent([SleepSession].self, forKey: .truSleep) ?? []
         stress = try c.decodeIfPresent([StressReading].self, forKey: .stress) ?? []
+        nightHRV = try c.decodeIfPresent([Int: NightHRV].self, forKey: .nightHRV) ?? [:]
         lastSync = try c.decodeIfPresent(Int.self, forKey: .lastSync)
     }
 }
@@ -179,6 +190,16 @@ final class HealthStore: ObservableObject {
             } catch {
                 truSleepNote = "TruSleep: \(error)"
             }
+            let missingHRV = data.truSleep.filter { data.nightHRV[$0.start] == nil && $0.end > now - 7 * 86400 }
+            if let newest = missingHRV.last {
+                status = L("Reading heart rate variability…", "Nabız değişkenliği okunuyor…")
+                if let raw = try? await files.truSleepRawData(from: newest.start, to: newest.end) {
+                    let beats = SleepFiles.beatTimes(raw)
+                    for night in missingHRV {
+                        if let hrv = SleepFiles.hrv(beats, from: night.start, to: night.end) { data.nightHRV[night.start] = hrv }
+                    }
+                }
+            }
             status = L("Reading stress…", "Stres okunuyor…")
             let stressFrom = max((data.stress.last?.time ?? 0) + 1, now - 14 * 86400)
             if let readings = try? await files.stress(from: stressFrom, to: now) {
@@ -193,6 +214,7 @@ final class HealthStore: ObservableObject {
             data.sleep.removeAll { $0.start < cutoff }
             data.truSleep.removeAll { $0.start < cutoff }
             data.stress.removeAll { $0.time < cutoff }
+            data.nightHRV = data.nightHRV.filter { $0.key >= cutoff }
             data.lastSync = now
             save()
             status = L("Synced: \(newMinutes) new minutes, \(newSleep) sleep segments, \(newNights) TruSleep nights.",
@@ -301,57 +323,47 @@ final class HealthStore: ObservableObject {
     }
 
     /// Nights already exported (files present).
+    /// A night counts as exported once a buffer export reached past its end.
     func isExported(_ night: SleepSession) -> Bool {
-        FileManager.default.fileExists(atPath: exportDir.appendingPathComponent("sleep_data_\(Self.stamp(night)).bin").path)
+        night.end <= UserDefaults.standard.integer(forKey: "export.coveredUntil")
     }
 
-    /// All exported files, newest night first.
+    /// All exported files, newest first.
     func refreshExportedFiles() {
         let files = (try? FileManager.default.contentsOfDirectory(at: exportDir, includingPropertiesForKeys: nil)) ?? []
         exportedFiles = files.sorted { $0.lastPathComponent > $1.lastPathComponent }
     }
 
-    /// Downloads sleep_data.bin once and splits it into the TruSleep nights that are not exported yet
-    /// (Documents/sleep-export). The watch ignores the requested range and always hands out its whole buffer
-    /// (about two weeks; a 24 h window gets nothing), so asking per night only produced duplicates.
+    /// Saves the watch's whole sleep buffer as it is: sleep_data (about one week of raw sensor data), sleep_state
+    /// (30 days of sessions) and the stress file. One set of files per export; overlapping exports are fine, the
+    /// research tools de-duplicate by timestamp. (Cutting the buffer into nights lost blocks of interrupted nights.)
     func exportNights(_ session: HuaweiSession) async {
         guard !syncing else { return }
-        let nights = data.truSleep.filter { !isExported($0) }
-        guard let newest = nights.last else {
-            refreshExportedFiles()
-            status = data.truSleep.isEmpty ? L("Sync first: no TruSleep night yet.", "Önce eşitle: henüz TruSleep gecesi yok.")
-                                           : L("All nights are exported.", "Tüm geceler dışa aktarıldı.")
+        guard let newest = data.truSleep.last else {
+            status = L("Sync first: no TruSleep night yet.", "Önce eşitle: henüz TruSleep gecesi yok.")
             return
         }
         syncing = true
         defer { syncing = false; refreshExportedFiles() }
         status = L("Downloading the sleep buffer… (about a minute)", "Uyku verisi indiriliyor…")
         let files = SleepFiles(session: session)
+        let now = Int(Date().timeIntervalSince1970)
+        let stamp = Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false).timeSeparator(.omitted))
         do {
-            // the exact window of a stored session is what the watch accepts
+            // the exact window of a stored session is what the watch accepts; it answers with everything it has
             let raw = try await files.truSleepRawData(from: newest.start, to: newest.end)
-            let oldest = nights.first?.start ?? newest.start
-            let state = try await files.truSleepStateRaw(from: oldest - 86400, to: newest.end + 3600)
+            let state = try await files.truSleepStateRaw(from: now - 30 * 86400, to: now)
+            try Data(raw).write(to: exportDir.appendingPathComponent("sleep_data_\(stamp).bin"))
+            try Data(state).write(to: exportDir.appendingPathComponent("sleep_state_\(stamp).bin"))
             let covered = SleepFiles.dataTimeRange(raw)
-            var done = 0, empty = 0
-            for night in nights {
-                let stamp = Self.stamp(night)
-                let part = SleepFiles.slice(raw, from: night.start - 60, to: night.end + 60)
-                let info = "night start \(night.start) end \(night.end) (\(night.minutes) min)\n"
-                    + "buffer \(raw.count) bytes, covers \(covered.map { "\($0.first)-\($0.last)" } ?? "-")\n"
-                    + "this night \(part.count) bytes\ntimezone \(TimeZone.current.identifier)\n"
-                    + files.log.joined(separator: "\n")
-                try Data(info.utf8).write(to: exportDir.appendingPathComponent("night_\(stamp).txt"))
-                guard !part.isEmpty else { empty += 1; continue }   // no longer on the watch
-                let records = stride(from: 0, to: state.count - 15, by: 16).map { Array(state[$0..<$0 + 16]) }
-                    .filter { SleepFiles.parseState($0).first.map { $0.start < night.end + 60 && night.start - 60 < $0.end } ?? false }
-                try Data(records.flatMap { $0 }).write(to: exportDir.appendingPathComponent("sleep_state_\(stamp).bin"))
-                try Data(part).write(to: exportDir.appendingPathComponent("sleep_data_\(stamp).bin"))
-                done += 1
+            if let last = covered?.last {
+                UserDefaults.standard.set(max(last, UserDefaults.standard.integer(forKey: "export.coveredUntil")), forKey: "export.coveredUntil")
             }
-            status = L("Exported \(done) nights from one download (\(raw.count / 1024) KB)",
-                       "Tek indirmeden \(done) gece dışa aktarıldı (\(raw.count / 1024) KB)")
-                + (empty > 0 ? L(", \(empty) no longer on the watch.", ", \(empty) gece artık saatte yok.") : ".")
+            let span = covered.map {
+                Date(timeIntervalSince1970: TimeInterval($0.first)).formatted(date: .abbreviated, time: .shortened) + " – "
+                    + Date(timeIntervalSince1970: TimeInterval($0.last)).formatted(date: .abbreviated, time: .shortened)
+            } ?? "–"
+            status = L("Exported the sleep buffer (\(raw.count / 1024) KB): \(span)", "Uyku verisi dışa aktarıldı (\(raw.count / 1024) KB): \(span)")
         } catch {
             status = L("Export failed: \(error)", "Dışa aktarma başarısız: \(error)") + "\n" + files.log.joined(separator: "\n")
         }

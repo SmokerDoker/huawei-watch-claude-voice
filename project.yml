@@ -29,8 +29,8 @@ targets:
       path: HuaSideload/Info.plist
       properties:
         CFBundleDisplayName: HuaSideload
-        CFBundleShortVersionString: "2.2.0"
-        CFBundleVersion: "6"
+        CFBundleShortVersionString: "2.3.0"
+        CFBundleVersion: "7"
         NSBluetoothAlwaysUsageDescription: Needed to connect to your Huawei watch over Bluetooth.
         NSMicrophoneUsageDescription: Used to capture dictation when you start a Hermes voice session on your watch.
         NSLocalNetworkUsageDescription: Used to reach your own Claude bridge on your home or VPN network.

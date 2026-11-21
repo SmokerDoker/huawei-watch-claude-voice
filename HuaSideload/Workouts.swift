@@ -11,6 +11,15 @@ struct WorkoutPoint: Codable, Hashable {
     var altitude: Double?
 }
 
+/// One sample of a workout's recorded data (every few seconds): heart rate, speed, cadence, altitude.
+struct WorkoutSample: Codable, Hashable {
+    var time: Int
+    var heartRate: Int?
+    var speed: Int?        // as the watch sends it (Gadgetbridge: 0.1 m/s on most devices)
+    var cadence: Int?      // steps per minute
+    var altitude: Double?
+}
+
 struct Workout: Codable, Identifiable, Hashable {
     var number: Int
     var start: Int
@@ -24,7 +33,15 @@ struct Workout: Codable, Identifiable, Hashable {
     var maxHeartRate: Int?
     var elevationGain: Int?   // dm? as the watch reports it
     var route: [WorkoutPoint] = []
+    var samples: [WorkoutSample]? = nil   // optional so workouts saved by older versions still load
     var id: Int { start }
+
+    /// The totals often carry no heart rate on the GT 3 Pro; the samples do.
+    var averageHeartRate: Int? {
+        let hr = (samples ?? []).compactMap(\.heartRate)
+        return hr.isEmpty ? nil : hr.reduce(0, +) / hr.count
+    }
+    var peakHeartRate: Int? { (samples ?? []).compactMap(\.heartRate).max() ?? (maxHeartRate.flatMap { $0 > 0 ? $0 : nil }) }
 
     var name: String {
         switch type {
@@ -87,7 +104,9 @@ final class WorkoutStore: ObservableObject {
             }
             // with no workouts the watch still sends one placeholder item: only the first `count` (tag 0x02) are real
             let total = container.int(0x02) ?? 0
-            let numbers = HealthProbe.objects(container, 0x85).prefix(total).compactMap { $0.int(0x06) }.sorted()
+            let entries = HealthProbe.objects(container, 0x85).prefix(total)
+            let pages = Dictionary(entries.compactMap { e in e.int(0x06).map { ($0, e.int(0x07) ?? 0) } }, uniquingKeysWith: { a, _ in a })
+            let numbers = pages.keys.sorted()
             var added = 0
             for (index, number) in numbers.enumerated() {
                 status = L("Workout \(index + 1) of \(numbers.count)…", "Antrenman \(index + 1)/\(numbers.count)…")
@@ -102,6 +121,15 @@ final class WorkoutStore: ObservableObject {
                                       minHeartRate: hr.flatMap { $0.count >= 2 ? Int($0[0]) : nil },
                                       maxHeartRate: hr.flatMap { $0.count >= 2 ? Int($0[1]) : nil },
                                       elevationGain: t.int(0x0B))
+                // recorded samples (heart rate, speed, cadence, altitude), page by page (0x17/0x0A)
+                var samples: [WorkoutSample] = []
+                for page in 0..<(pages[number] ?? 0) {
+                    let tlv = HuaweiTLV().with(0x81, HuaweiTLV().with(0x02, be16(number)).with(0x03, be16(page)).serialize())
+                    guard let response = try? await session.request(0x17, 0x0A, tlv, label: "Workout data \(number)/\(page)", timeout: 15),
+                          let c = response.tlv?.value(0x81).flatMap({ try? HuaweiTLV.parse($0) }) else { continue }
+                    samples += Self.parseSamples(c)
+                }
+                if !samples.isEmpty { workout.samples = samples }
                 // GPS route (only outdoor workouts have one; an empty file is fine)
                 if let gps = try? await SleepFiles(session: session).workoutGPS(number: number), !gps.isEmpty {
                     workout.route = Self.parseGPS(gps)
@@ -115,6 +143,46 @@ final class WorkoutStore: ObservableObject {
         } catch {
             status = L("Workout sync stopped: \(error)", "Antrenman eşitleme durdu: \(error)")
         }
+    }
+
+    /// Workout.WorkoutData.Response (Gadgetbridge): 14-byte header (BE: workout u16, page u16, start u32, interval u8,
+    /// count u16, sample length u8, bitmap u16), then `count` samples whose fields are chosen by the bitmap
+    /// (hr 1, speed 2, step rate 1, swolf 2, stroke rate 2, altitude 4, inner block, calories 2, frequency 2, power 2);
+    /// the inner block's fields come from tag 0x09 (default 0x01FF).
+    static func parseSamples(_ c: HuaweiTLV) -> [WorkoutSample] {
+        guard let header = c.value(0x04), header.count == 14, let raw = c.value(0x05) else { return [] }
+        func be(_ bytes: ArraySlice<UInt8>) -> Int { bytes.reduce(0) { $0 << 8 | Int($1) } }
+        let start = be(header[4..<8]), interval = Int(header[8]), count = be(header[9..<11]), bitmap = be(header[12..<14])
+        let inner = c.int(0x09) ?? 0x01FF
+        let sizes = [1, 2, 1, 2, 2, 4, -1, 2, 2, 2]
+        let innerSizes = [2, 2, 2, 1, 2, 1, 1, 1, 1, 2, 2, 1, 2, 2, 2, 2, 1, 1, 1, 2]
+        var samples: [WorkoutSample] = []
+        var i = raw.startIndex
+        for n in 0..<count {
+            var sample = WorkoutSample(time: start + interval * n)
+            for (bit, size) in sizes.enumerated() where bitmap & (1 << bit) != 0 {
+                if bit == 6 {
+                    for (k, s) in innerSizes.enumerated() where inner & (1 << k) != 0 {
+                        guard i + s <= raw.endIndex else { return samples }
+                        if k == 0 { sample.cadence = be(raw[i..<i + s]) }
+                        i += s
+                    }
+                    continue
+                }
+                guard i + size <= raw.endIndex else { return samples }
+                let value = be(raw[i..<i + size])
+                switch bit {
+                case 0: if value > 0 && value < 255 { sample.heartRate = value }
+                case 1: if value > 0 && value < 0x8000 { sample.speed = value }
+                case 2: if value > 0 && value < 255 && sample.cadence == nil { sample.cadence = value }
+                case 5: let signed = Int32(bitPattern: UInt32(value)); if signed != -1 { sample.altitude = Double(signed) / 10 }
+                default: break
+                }
+                i += size
+            }
+            samples.append(sample)
+        }
+        return samples
     }
 
     /// HuaweiGpsParser.parseHuaweiGps: header with the start point, then deltas in metres (float) per point.

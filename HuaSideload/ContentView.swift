@@ -468,6 +468,10 @@ struct HealthDiagnosticsSection: View {
                 LabeledContent(L("Last sleep (TruSleep)", "Son uyku (TruSleep)"),
                                value: "\(start.formatted(.dateTime.weekday(.abbreviated).hour().minute()))–"
                                     + "\(end.formatted(date: .omitted, time: .shortened)) · \(night.minutes / 60) h \(night.minutes % 60) min")
+                if let hrv = store.data.nightHRV[night.start] {
+                    LabeledContent(L("Night HRV (RMSSD)", "Gece HRV (RMSSD)"),
+                                   value: "\(hrv.rmssd) ms · Ø \(hrv.heartRate) bpm, " + L("lowest", "en düşük") + " \(hrv.lowest)")
+                }
             }
             if store.data.truSleep.isEmpty && !sleep.isEmpty {
                 LabeledContent(L("Sleep segments (last night)", "Uyku bölümleri (dün gece)"),
@@ -489,7 +493,7 @@ struct HealthDiagnosticsSection: View {
                 }
                 .disabled(store.syncing)
                 let pending = store.data.truSleep.filter { !store.isExported($0) }.count
-                Button(L("Export raw data of all nights (\(pending) new)", "Tüm gecelerin ham verisini dışa aktar (\(pending) yeni)")) {
+                Button(L("Export sleep buffer (\(pending) new nights)", "Uyku verisini dışa aktar (\(pending) yeni gece)")) {
                     Task { await link.exportNights() }
                 }
                 .disabled(store.syncing)
@@ -501,8 +505,8 @@ struct HealthDiagnosticsSection: View {
                               systemImage: "square.and.arrow.up")
                     }
                 }
-                Text(L("Send these files plus a screenshot of the same night in Huawei Health (deep/light/REM/awake minutes).",
-                       "Bu dosyaları ve aynı gecenin Huawei Health ekran görüntüsünü gönder."))
+                Text(L("One export holds about a week of nights. Export every 4–5 days and send the newest sleep_data/sleep_state files plus Huawei Health screenshots of the nights.",
+                       "Bir dışa aktarma yaklaşık bir haftalık geceyi içerir. 4–5 günde bir dışa aktar."))
                     .font(.caption2).foregroundStyle(.secondary)
             }
             DisclosureGroup(L("Diagnostics", "Tanı")) {

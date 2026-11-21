@@ -1,3 +1,4 @@
+import Charts
 import MapKit
 import SwiftUI
 
@@ -104,8 +105,17 @@ struct WorkoutDetail: View {
             }
             if let c = workout.calories, c > 0 { LabeledContent(L("Calories", "Kalori"), value: "\(c / 1000) kcal") }
             if let s = workout.steps, s > 0 { LabeledContent(L("Steps", "Adım"), value: "\(s)") }
-            if let lo = workout.minHeartRate, let hi = workout.maxHeartRate, hi > 0 {
-                LabeledContent(L("Heart rate", "Nabız"), value: "\(lo)–\(hi) bpm")
+            if let avg = workout.averageHeartRate, let peak = workout.peakHeartRate {
+                LabeledContent(L("Heart rate", "Nabız"), value: "Ø \(avg) · max \(peak) bpm")
+            }
+            let hr = (workout.samples ?? []).compactMap { s in s.heartRate.map { (s.time, $0) } }
+            if hr.count > 2 {
+                Chart(hr, id: \.0) { point in
+                    LineMark(x: .value("Zeit", Date(timeIntervalSince1970: TimeInterval(point.0))), y: .value("bpm", point.1))
+                        .foregroundStyle(.red)
+                }
+                .chartYScale(domain: (hr.map(\.1).min()! - 5)...(hr.map(\.1).max()! + 5))
+                .frame(height: 160)
             }
             if let url = WorkoutStore.shared.gpx(workout) {
                 ShareLink(item: url) { Label(L("Share as GPX", "GPX olarak paylaş"), systemImage: "square.and.arrow.up") }
