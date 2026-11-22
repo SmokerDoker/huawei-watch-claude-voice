@@ -55,6 +55,11 @@ struct Workout: Codable, Identifiable, Hashable {
         case 8: L("Open water swim", "Açık su yüzme")
         case 13: L("Indoor walk", "Kapalı alan yürüyüş")
         case 14: L("Hike", "Doğa yürüyüşü")
+        case 15: L("Skiing", "Kayak")
+        case 18: L("Golf driving range", "Golf driving range")
+        case 22: L("Freediving", "Serbest dalış")
+        case 23: L("Apnea training", "Apne antrenmanı")
+        case 24: L("Apnea test", "Apne testi")
         case 21: L("Jump rope", "İp atlama")
         case 128: L("Table tennis", "Masa tenisi")
         case 129: "Badminton"
@@ -89,6 +94,13 @@ struct Workout: Codable, Identifiable, Hashable {
         default: L("Workout (type \(type))", "Antrenman (tür \(type))")   // not in Gadgetbridge's list either
         }
     }
+    /// Freediving records no heart rate, only the depth every second (in the altitude field, whole metres).
+    var isDive: Bool { type == 22 }
+    var depthSamples: [(time: Int, metres: Double)] {
+        guard isDive else { return [] }
+        return (samples ?? []).compactMap { s in s.altitude.map { (s.time, $0 * 10) } }
+    }
+    var maxDepth: Double? { depthSamples.map(\.metres).max() }
     /// Pace only makes sense for distance sports with a real distance.
     var showsPace: Bool { [1, 2, 3, 4, 5, 7, 13, 14].contains(type) && (distance ?? 0) >= 500 }
     var activeSeconds: Int { duration.map { $0 > 100_000 ? $0 / 1000 : $0 } ?? (end - start) }
