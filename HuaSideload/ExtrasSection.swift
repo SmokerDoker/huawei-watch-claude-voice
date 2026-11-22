@@ -100,11 +100,18 @@ struct WorkoutDetail: View {
             LabeledContent(L("Duration", "Süre"), value: Self.duration(workout.activeSeconds))
             if let d = workout.distance, d > 0 {
                 LabeledContent(L("Distance", "Mesafe"), value: String(format: "%.2f km", Double(d) / 1000))
-                let pace = Double(workout.activeSeconds) / (Double(d) / 1000)
-                LabeledContent(L("Pace", "Tempo"), value: String(format: "%d:%02d /km", Int(pace) / 60, Int(pace) % 60))
+                if workout.showsPace {
+                    let pace = Double(workout.activeSeconds) / (Double(d) / 1000)
+                    LabeledContent(L("Pace", "Tempo"), value: String(format: "%d:%02d /km", Int(pace) / 60, Int(pace) % 60))
+                }
             }
             if let c = workout.calories, c > 0 { LabeledContent(L("Calories", "Kalori"), value: "\(c / 1000) kcal") }
             if let s = workout.steps, s > 0 { LabeledContent(L("Steps", "Adım"), value: "\(s)") }
+            if workout.samples == nil {
+                Text(L("No heart rate recorded for this workout (or fetched before version 2.3: use \"Fetch all workouts again\").",
+                       "Bu antrenman için nabız yok."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if let avg = workout.averageHeartRate, let peak = workout.peakHeartRate {
                 LabeledContent(L("Heart rate", "Nabız"), value: "Ø \(avg) · max \(peak) bpm")
             }

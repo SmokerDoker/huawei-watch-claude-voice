@@ -6,6 +6,8 @@ struct HuaSideloadApp: App {
 
     init() {
         PhoneRinger.shared.prepareNotifications()
+        AutoSync.register()
+        AutoSync.schedule()
     }
 
     var body: some Scene {
@@ -17,6 +19,10 @@ struct HuaSideloadApp: App {
             if phase == .active {
                 PhoneRinger.shared.stop(notifyWatch: true)
                 CameraRemote.shared.appBecameActive()
+                AutoSync.syncIfDue(reason: "app opened")
+            }
+            if phase == .background {
+                AutoSync.schedule()
             }
         }
     }

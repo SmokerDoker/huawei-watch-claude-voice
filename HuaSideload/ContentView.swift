@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 struct ContentView: View {
-    @StateObject private var link = WatchLink()
+    @StateObject private var link = WatchLink.shared
     // Changing the language re-renders the screen; L() reads the same setting
     @AppStorage(AppLanguage.storageKey) private var language = AppLanguage.current.rawValue
     @State private var copied = false
@@ -481,6 +481,9 @@ struct HealthDiagnosticsSection: View {
             if let last = store.data.lastSync {
                 Text(L("Last sync: ", "Son eşitleme: ") + Date(timeIntervalSince1970: TimeInterval(last)).formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2).foregroundStyle(.secondary)
+            }
+            NavigationLink { TrendsView() } label: {
+                Label(L("Trends (30 days)", "Eğilimler (30 gün)"), systemImage: "chart.xyaxis.line")
             }
             DisclosureGroup(L("Sleep phase research", "Uyku evresi araştırması")) {
                 ForEach(store.data.truSleep.reversed(), id: \.self) { night in

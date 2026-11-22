@@ -27,6 +27,7 @@ final class WatchLink: NSObject, ObservableObject {
     @Published private(set) var isConnecting = false
     @Published private(set) var connectedName: String?
     @Published private(set) var huaweiChannelReady = false
+    static let shared = WatchLink()   // one instance: the UI and background sync use the same connection
     @Published private(set) var isPaired = false
     @Published private(set) var busy: String?
     @Published private(set) var battery: Int?
@@ -327,6 +328,7 @@ final class WatchLink: NSObject, ObservableObject {
             PCRelay.shared.attach(session, watchName: self.connectedName ?? "")
             self.startWeatherUpdates(session)
             try await self.refreshInfo(session)
+            AutoSync.syncIfDue(reason: "connected")
             Task { await self.offerNotificationIcon(session) }
         }
     }

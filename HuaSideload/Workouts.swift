@@ -56,14 +56,41 @@ struct Workout: Codable, Identifiable, Hashable {
         case 13: L("Indoor walk", "Kapalı alan yürüyüş")
         case 14: L("Hike", "Doğa yürüyüşü")
         case 21: L("Jump rope", "İp atlama")
+        case 128: L("Table tennis", "Masa tenisi")
+        case 129: "Badminton"
+        case 130: L("Tennis", "Tenis")
+        case 131: L("Football", "Futbol")
+        case 132: L("Basketball", "Basketbol")
+        case 133: L("Volleyball", "Voleybol")
         case 134: L("Elliptical", "Eliptik")
         case 135: L("Rowing machine", "Kürek makinesi")
+        case 136: L("Stepper", "Stepper")
         case 137: "Yoga"
+        case 138: "Pilates"
+        case 139: L("Aerobics", "Aerobik")
         case 140: L("Strength", "Kuvvet")
+        case 141: "Spinning"
         case 143: "HIIT"
-        default: L("Workout \(type)", "Antrenman \(type)")
+        case 145: "CrossFit"
+        case 146: L("Functional training", "Fonksiyonel antrenman")
+        case 147: L("Physical training", "Fiziksel antrenman")
+        case 149: L("Boxing", "Boks")
+        case 157: L("Core training", "Core antrenmanı")
+        case 167: L("Dance", "Dans")
+        case 177: L("Stair climbing", "Merdiven")
+        case 194: L("Sailing", "Yelken")
+        case 195: L("Surfing", "Sörf")
+        case 196: L("Fishing", "Balık tutma")
+        case 199: L("Canoeing", "Kano")
+        case 200: L("Rowing", "Kürek")
+        case 202: L("Stand-up paddling", "SUP")
+        case 210: L("Rock climbing", "Kaya tırmanışı")
+        case 255: L("Other workout", "Diğer antrenman")
+        default: L("Workout (type \(type))", "Antrenman (tür \(type))")   // not in Gadgetbridge's list either
         }
     }
+    /// Pace only makes sense for distance sports with a real distance.
+    var showsPace: Bool { [1, 2, 3, 4, 5, 7, 13, 14].contains(type) && (distance ?? 0) >= 500 }
     var activeSeconds: Int { duration.map { $0 > 100_000 ? $0 / 1000 : $0 } ?? (end - start) }
 }
 
