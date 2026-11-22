@@ -94,11 +94,11 @@ struct Workout: Codable, Identifiable, Hashable {
         default: L("Workout (type \(type))", "Antrenman (tür \(type))")   // not in Gadgetbridge's list either
         }
     }
-    /// Freediving records no heart rate, only the depth every second (in the altitude field, whole metres).
+    /// Freediving records no heart rate, only the depth every second (in the altitude field, decimetres).
     var isDive: Bool { type == 22 }
     var depthSamples: [(time: Int, metres: Double)] {
         guard isDive else { return [] }
-        return (samples ?? []).compactMap { s in s.altitude.map { (s.time, $0 * 10) } }
+        return (samples ?? []).compactMap { s in s.altitude.map { (s.time, $0) } }
     }
     var maxDepth: Double? { depthSamples.map(\.metres).max() }
     /// Pace only makes sense for distance sports with a real distance.

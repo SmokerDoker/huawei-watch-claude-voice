@@ -42,5 +42,5 @@ Pairing the watch with the PC disconnects it from the phone: re-pair Huawei Heal
   "no such file" (7F=0x23281); 0x1A and higher get no answer.
 - Workout count (0x17/0x07) sends one placeholder item even when there are no workouts: use tag 0x02 (count).
 - Workout types seen on the GT 3 Pro: 1 run, 6 pool swim, 8 open water swim, 14 hike, 15 skiing, 18 golf driving range, 22 freediving, 23 apnea training, 24 apnea test, 140 strength, 202 SUP.
-- Freediving (22) pages have bitmap 0x0020 only: depth every second in the altitude field (whole metres, totals 0x1b/0x1c = max depth), no heart rate at all.
+- Freediving (22) pages have bitmap 0x0020 only: depth every second in the altitude field (decimetres, totals 0x1b/0x1c = max depth; max seen 65 = 6.5 m), no heart rate at all.
 - A relay request answered with 7F=000186ad (100013) for every command means the app link lost its auth: reconnect in the app.

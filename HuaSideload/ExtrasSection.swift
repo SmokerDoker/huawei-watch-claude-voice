@@ -109,12 +109,12 @@ struct WorkoutDetail: View {
             if let s = workout.steps, s > 0 { LabeledContent(L("Steps", "Adım"), value: "\(s)") }
             let depth = workout.depthSamples
             if let maxDepth = workout.maxDepth, depth.count > 2 {
-                LabeledContent(L("Max depth", "Maks. derinlik"), value: String(format: "%.0f m", maxDepth))
+                LabeledContent(L("Max depth", "Maks. derinlik"), value: String(format: "%.1f m", maxDepth))
                 Chart(depth, id: \.time) { point in
                     AreaMark(x: .value("Zeit", Date(timeIntervalSince1970: TimeInterval(point.time))), y: .value("m", -point.metres))
                         .foregroundStyle(.blue.opacity(0.35))
                 }
-                .chartYAxis { AxisMarks { v in AxisValueLabel { if let m = v.as(Double.self) { Text("\(Int(-m)) m") } } } }
+                .chartYAxis { AxisMarks { v in AxisValueLabel { if let m = v.as(Double.self) { Text(String(format: "%.1f m", -m)) } } } }
                 .frame(height: 160)
                 Text(L("The watch records no heart rate during freediving, only the depth.",
                        "Saat serbest dalışta nabız kaydetmez, sadece derinlik."))
