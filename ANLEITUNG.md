@@ -102,7 +102,7 @@ Unter *Settings → Secrets and variables → Actions → Secrets* anlegen:
 - **Fernauslöser:** Kamera-App „Remote shutter“ auf der Uhr oder „Remote shutter (camera)“ in der App. iOS erlaubt die Kamera nur, wenn HuaSideload offen ist; sonst kommt eine Mitteilung zum Öffnen. Fotos landen in der Fotos-App.
 - **Ruhepuls:** Schätzung aus den Pulswerten (niedrigster 10-Minuten-Schnitt). Stresswerte liefert die GT 3 Pro über das bekannte Protokoll nicht.
 - **Apple Health:** Mit einer kostenlosen Apple-ID nicht möglich: Apple gibt die HealthKit-Berechtigung nur mit bezahltem Entwicklerkonto (99 $/Jahr) frei, die App meldet sonst „Missing com.apple.developer.healthkit entitlement“. Der Code ist drin; mit bezahltem Konto die Repository-Variable `HEALTHKIT_IPA=1` setzen, dann baut der Workflow zusätzlich `HuaSideload-health.ipa`.
-- **Uhr hängt nach dem Koppeln auf „Pair“:** Die App schickt jetzt nach jeder Verbindung die Meldungen, mit denen Huawei Health die Einrichtung abschließt. Hängt sie trotzdem: Uhr in HuaSideload trennen und neu verbinden.
+- **Ohne Huawei Health koppeln:** Unter Features die **Huawei-Account-ID** eintragen (17 Ziffern, Cookie `userId` auf cloud.huawei.com, angemeldet mit dem Account aus Huawei Health). Die App schickt sie direkt nach dem Koppeln (Befehl 0x1A/0x05); die Uhr antwortet mit `02=00` (passt) und verlässt den „Pair“-Bildschirm. `02=01` heißt „anderer Account“ → die Uhr bietet einen Werksreset an (nicht bestätigen). Wichtig: das Flag 0x03 nur senden, wenn die Uhr die Fähigkeit 0xAC meldet – bei der GT 3 Pro nicht; mit Flag kam die Reset-Meldung.
 
 ## Wenn etwas nicht klappt
 
