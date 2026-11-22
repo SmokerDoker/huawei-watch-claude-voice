@@ -64,6 +64,7 @@ struct ContentView: View {
                 if link.isPaired {
                     WatchSpeakerSection(speaker: link.speaker)
                     if !filmMode { PCRelaySection() }
+                    if !filmMode { HuaweiAccountSection() }
                     // Feature sections (navigation, remote control etc.); never in filming mode
                     if !filmMode {
                         ForEach(link.features.indices, id: \.self) { index in

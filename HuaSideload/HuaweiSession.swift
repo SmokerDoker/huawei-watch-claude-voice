@@ -294,6 +294,8 @@ final class HuaweiSession {
 
     // MARK: - Pairing
 
+    private var retriedWithPin = false
+
     // HuaweiSupportProvider: LinkParams -> SecurityNegotiation -> (PinCode + HiChain op 1) -> HiChain op 2
     func pair(watch: String) async throws {
         isPaired = false
@@ -347,7 +349,17 @@ final class HuaweiSession {
             log(.info, L("3/4 Saved pairing key found, PIN step skipped", "3/4 Kayıtlı eşleşme anahtarı var, PIN adımı atlandı"))
         }
 
-        sessionKey = try await hiChain(operation: 2, key: authToken!, deviceId: deviceId)
+        do {
+            sessionKey = try await hiChain(operation: 2, key: authToken!, deviceId: deviceId)
+        } catch where !retriedWithPin && store.authToken(for: watch) != nil {
+            // the saved key no longer fits (watch was disconnected/re-paired elsewhere): forget it and pair with a PIN
+            log(.error, L("Saved pairing key rejected, pairing again with a PIN", "Kayıtlı anahtar reddedildi, PIN ile yeniden eşleşiliyor"))
+            store.setAuthToken(nil, for: watch)
+            retriedWithPin = true
+            defer { retriedWithPin = false }
+            try await pair(watch: watch)
+            return
+        }
         isPaired = true
         log(.success, L("PAIRED! The connection to the watch is now encrypted.", "EŞLEŞME TAMAM! Artık saatle şifreli konuşuyoruz."))
         finishSetup()
@@ -357,6 +369,31 @@ final class HuaweiSession {
     /// AcceptAgreementsRequest 0x01/0x30, SendSetUpDeviceStatusRequest 0x01/0x3E, DeviceStatus notify 0x01/0x16).
     /// Sent on every connection, like Gadgetbridge; harmless when the watch is already set up.
     func finishSetup() {
+        // Huawei account ID (17 digits, cookie "userId" on cloud.huawei.com): the watch only leaves its "Pair" screen when it
+        // matches the account Huawei Health bound it to. Sent first, like Gadgetbridge's SendExtendedAccountRequest; never
+        // sent empty (an empty account makes the watch offer a factory reset).
+        let account = (UserDefaults.standard.string(forKey: "huawei.accountId") ?? "").trimmingCharacters(in: .whitespaces)
+        if !account.isEmpty {
+            Task {
+                // expand capability 0xAC = "different account pairing optimization" (decides the 0x03 flag)
+                var optimization = false
+                if let caps = try? await request(0x01, 0x37, HuaweiTLV().with(0x01), label: "Expand capabilities", timeout: 4).tlv?.value(0x01) {
+                    let bit = 0xAC
+                    optimization = bit / 8 < caps.count && caps[bit / 8] & (1 << (bit % 8)) != 0
+                    log(.info, "Expand capabilities \(caps.count) bytes, account pairing optimization: \(optimization)")
+                }
+                var tlv = HuaweiTLV().with(0x01, Array(account.utf8))
+                if optimization { tlv = tlv.with(0x03, [0x01]) }
+                let answer = try? await request(0x1A, 0x05, tlv, label: "Huawei account", timeout: 5)
+                log(.info, "Huawei account sent, answer: \(answer?.tlv.map { "\($0)" } ?? "none")")
+                sendSetupMessages()
+            }
+        } else {
+            sendSetupMessages()
+        }
+    }
+
+    private func sendSetupMessages() {
         func be32(_ v: Int) -> [UInt8] { [UInt8(v >> 24 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v & 0xFF)] }
         let now = Int(Date().timeIntervalSince1970)
         var list = HuaweiTLV()

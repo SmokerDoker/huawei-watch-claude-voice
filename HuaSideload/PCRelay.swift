@@ -231,3 +231,20 @@ struct PCRelaySection: View {
         }
     }
 }
+
+/// Huawei account ID for pairing without Huawei Health (see HuaweiSession.finishSetup).
+struct HuaweiAccountSection: View {
+    @AppStorage("huawei.accountId") private var accountId = ""
+
+    var body: some View {
+        Section {
+            TextField(L("Huawei account ID (17 digits)", "Huawei hesap kimliği (17 hane)"), text: $accountId)
+                .keyboardType(.numberPad)
+        } header: {
+            Text(L("Huawei account (experimental)", "Huawei hesabı (deneysel)"))
+        } footer: {
+            Text(L("Lets the watch finish pairing without Huawei Health. The ID is the cookie \"userId\" on cloud.huawei.com when signed in with the account used in Huawei Health. Leave empty if unsure: a wrong ID makes the watch offer a factory reset (just dismiss it).",
+                   "Saatin Huawei Health olmadan eşleşmeyi bitirmesini sağlar. Emin değilsen boş bırak."))
+        }
+    }
+}
